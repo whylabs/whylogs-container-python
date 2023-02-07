@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "whylogs container"
+version = "0.1.0"
+description = ""
+authors = ["Anthony Naddeo <anthony.naddeo@gmail.com>"]
+license = "Apache-2.0 license"
+readme = "README.md"
+packages = [{include = "src/**/*.py"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = {extras = ["all"], version = "^0.89.0"}
+uvicorn = "^0.20.0"
+pandas = "^1.5.2"
+numpy = "^1.24.1"
+faster-fifo = "^1.4.2"
+pyarrow = "^11.0.0"
+tenacity = "^8.1.0"
+whylogs = "^1.1.24"
+
+[tool.poetry.group.dev.dependencies]
+black = "^22.12.0"
+mypy = "^0.991"
+pytest = "^7.2.0"
+
+[tool.black]
+line-length = 140
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[flake8]
+max-line-length = 140
