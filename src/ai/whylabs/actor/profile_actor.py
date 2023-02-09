@@ -1,51 +1,101 @@
 import io
+import os
+from itertools import groupby
+from pydantic import BaseModel
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Type, Union, cast
+from typing import Any, Dict, List, Optional, Type, Union, cast
+from ..container.requests import LogRequest
 
 import pandas as pd
+import whylogs as y
 from faster_fifo import Queue
-from whylogs.core import DatasetProfile
+from whylogs.api.logger.rolling import TimedRollingLogger
 
-from .actor import Actor
-
-
-@dataclass
-class CSVMessage:
-    csv: bytes
+from .actor import Actor, CloseMessage
 
 
 class DebugMessage:
     pass
 
+class PublishMessage:
+    pass
 
-MessageType = Union[CSVMessage, DebugMessage]
 
+@dataclass
+class LogMessage():
+    request: LogRequest
+
+
+MessageType = Union[DebugMessage, PublishMessage, LogMessage]
+
+# TODO config structure
+# - https://whylabs.github.io/whylogs-container-docs/whylogs-container/ai.whylabs.services.whylogs.core.config/-env-var-names/index.html?query=enum%20EnvVarNames%20:%20Enum%3CEnvVarNames%3E
 
 class ProfileActor(Actor[MessageType]):
     def __init__(self, queue: Queue) -> None:
         super().__init__(queue)
-        # TODO next thing to figure out is how I should be using why.log to work with result sets instead of directly with DatasetProfile
-        self.profiles: Dict[str, DatasetProfile] = {"default": DatasetProfile()}
+        self.loggers: Dict[str, TimedRollingLogger] = {}
 
-    def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
-        if batch_type == CSVMessage:
-            self.process_csv(cast(List[CSVMessage], batch))
-        elif batch_type == DebugMessage:
+    def _create_logger(self, dataset_id: str) -> TimedRollingLogger:
+        logger = y.logger(mode="rolling", interval=5, when="M", base_name="profile_")
+        # TODO get org id, api key from config
+        logger.append_writer('whylabs', org_id="org-JpsdM6", api_key="Cew2sT596i.v8mfbaoJYUeIZdu83Q5jSgv7plAFACTya9Nq85SapA433EOLuQfvX", dataset_id=dataset_id)
+        return logger
+
+    def _get_logger(self, dataset_id: str) -> TimedRollingLogger:
+        if not dataset_id in self.loggers:
+            self.loggers[dataset_id] = self._create_logger(dataset_id)
+        return self.loggers[dataset_id]
+
+    async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
+        if batch_type == DebugMessage:
             self.process_debug_message(cast(List[DebugMessage], batch))
-        elif batch_type == type(None):
-            pass
+        elif batch_type == PublishMessage:
+            self.process_publish_message(cast(List[PublishMessage], batch))
+        elif batch_type == LogMessage:
+            self.process_log_message(cast(List[LogMessage], batch))
+        elif batch_type == CloseMessage:
+            self.process_close_message(cast(List[CloseMessage], batch))
         else:
             raise Exception(f"Unknown message type {batch_type}")
 
-    def process_csv(self, messages: List[CSVMessage]) -> None:
-        self._logger.info("Processing csv message")
-        csv_list = map(lambda message: message.csv, messages)
-        dfs = [pd.read_csv(io.BytesIO(csv_bytes), engine="pyarrow") for csv_bytes in csv_list]
-        df = pd.concat(dfs)
+    def process_close_message(self, messages: List[CloseMessage]) -> None:
+        self._logger.info("Running pre shutdown operations")
+        self.process_publish_message()
 
-        profile = self.profiles["default"]
-        profile.track(df)
+
+    def process_log_message(self, messages: List[LogMessage]) -> None:
+        self._logger.info("Processing log request message")
+        for dataset_id, group in groupby(messages, lambda it: it.request.dataset_id):
+            logger = self._get_logger(dataset_id)
+            dfs = [log_request_to_data_frame(message.request) for message in group]
+            df = pd.concat(dfs)
+            logger.log(df)
+
 
     def process_debug_message(self, messages: List[DebugMessage]) -> None:
-        self._logger.debug(self.profiles["default"].view().to_pandas())
+        # TODO @jamie why does this always return something even after it writes to whylabs? Shouldn't everything be purged locally?
+        # TODO repro fully
+        for dataset_id, logger in self.loggers.items():
+            profiles = logger._get_matching_profiles()
+            for profile in profiles:
+                self._logger.info(f'{dataset_id}{os.linesep}{profile.view().to_pandas()}')
+
+    def process_publish_message(self, messages: Optional[List[PublishMessage]] = None) -> None:
+        if not self.loggers:
+            self._logger.debug(f'No profiles to publish')
+            return
+
+        self._logger.debug(f'Force publishing profiles')
+        for dataset_id, logger in self.loggers.items():
+            self._logger.info(f'Force rolling dataset {dataset_id}')
+            logger._do_rollover()
+
+
+def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:
+    if request.single:
+        return pd.DataFrame.from_dict(request.single)
+    elif request.multiple:
+        return pd.DataFrame(request.multiple.data, columns=request.multiple.columns)
+    

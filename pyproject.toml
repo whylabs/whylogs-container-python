@@ -12,11 +12,9 @@ python = "^3.8"
 fastapi = {extras = ["all"], version = "^0.89.0"}
 uvicorn = "^0.20.0"
 pandas = "^1.5.2"
-numpy = "^1.24.1"
 faster-fifo = "^1.4.2"
-pyarrow = "^11.0.0"
-tenacity = "^8.1.0"
-whylogs = "^1.1.24"
+whylogs = {extras = ["whylabs"], version = "^1.1.24"}
+requests = "^2.28.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^22.12.0"
