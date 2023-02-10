@@ -14,14 +14,13 @@ actor = ProfileActor(Queue(_DEFAULT_QUEUE_SIZE_BYTES))
 
 @app.post("/log")
 async def log(_raw_request: Request) -> None:
+    # TODO uh oh, using the built in serde with pydantic in fastapi is incredibly, incredibly slow. Moving it all out
+    # and manually doing it in the profiling process dramatically increases throughput from 700tps -> 3500tps
     b: bytes = await _raw_request.body()
+    # TODO assign a dataset timestamp here asap before queueing it up for profiling
     # req = LogRequest.parse_raw(csv)
     await actor.send(RawLogMessage(b))
 
-@app.post("/csv")
-async def log_csv(request: Request) -> None:
-    csv: bytes = await request.body()
-    # await actor.send(LogMessage(request))
 
 @app.post("/publish")
 async def publish_profiles() -> None:
