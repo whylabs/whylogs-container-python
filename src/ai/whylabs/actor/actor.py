@@ -1,5 +1,4 @@
 from faster_fifo import Queue
-import psutil
 import asyncio
 import logging
 from abc import ABC, abstractmethod

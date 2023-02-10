@@ -7,6 +7,12 @@ server: ## Run the dev server
 	# uvicorn src.ai.whylabs.container.main:app --reload
 	cd src && python -m ai.whylabs.container.startup
 
+docker:
+	docker build . -t whylabs/whylogs:python-latest
+
+docker-push:
+	docker push whylabs/whylogs:python-latest
+
 load-test-500:
 	./hey -z 10s -n 1000 -c 4 -m POST -D data/data-500.csv 'http://localhost:8000/pipe'
 
