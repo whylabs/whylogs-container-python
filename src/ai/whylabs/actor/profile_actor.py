@@ -28,8 +28,11 @@ class PublishMessage:
 class LogMessage():
     request: LogRequest
 
+@dataclass
+class RawLogMessage():
+    request: bytes
 
-MessageType = Union[DebugMessage, PublishMessage, LogMessage]
+MessageType = Union[DebugMessage, PublishMessage, LogMessage, RawLogMessage]
 
 # TODO config structure
 # - https://whylabs.github.io/whylogs-container-docs/whylogs-container/ai.whylabs.services.whylogs.core.config/-env-var-names/index.html?query=enum%20EnvVarNames%20:%20Enum%3CEnvVarNames%3E
@@ -57,6 +60,10 @@ class ProfileActor(Actor[MessageType]):
             self.process_publish_message(cast(List[PublishMessage], batch))
         elif batch_type == LogMessage:
             self.process_log_message(cast(List[LogMessage], batch))
+        elif batch_type == RawLogMessage:
+            msgs = cast(List[RawLogMessage], batch)
+            log_messages = [LogMessage(LogRequest.parse_raw(m.request)) for m in msgs]
+            self.process_log_message(log_messages)
         elif batch_type == CloseMessage:
             self.process_close_message(cast(List[CloseMessage], batch))
         else:
