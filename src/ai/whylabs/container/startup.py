@@ -27,7 +27,7 @@ if __name__ == "__main__":
     actor.start()
     actor.join(0.1)
 
-    config = uvicorn.Config("ai.whylabs.container.routes:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    config = uvicorn.Config("ai.whylabs.container.routes:app", host="0.0.0.0", port=8000, reload=True, log_level=logging.WARN)
     server = uvicorn.Server(config)
     logger.info("Visit http://localhost:8000/docs")
     server.run()

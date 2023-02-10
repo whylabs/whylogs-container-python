@@ -1,4 +1,4 @@
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, Request
 from faster_fifo import Queue
 
 from ..actor.profile_actor import DebugMessage, ProfileActor, PublishMessage, LogMessage, CloseMessage
@@ -13,9 +13,15 @@ actor = ProfileActor(Queue(_DEFAULT_QUEUE_SIZE_BYTES))
 
 
 @app.post("/log")
-async def log(request: LogRequest) -> None:
-    await actor.send(LogMessage(request))
+async def log(_raw_request: Request) -> None:
+    csv: bytes = await _raw_request.body()
+    req = LogRequest.parse_raw(csv)
+    await actor.send(LogMessage(req))
 
+@app.post("/csv")
+async def log_csv(request: Request) -> None:
+    csv: bytes = await request.body()
+    # await actor.send(LogMessage(request))
 
 @app.post("/publish")
 async def publish_profiles() -> None:

@@ -1,4 +1,6 @@
 import io
+from functools import reduce
+import time
 import os
 from itertools import groupby
 from pydantic import BaseModel
@@ -69,8 +71,13 @@ class ProfileActor(Actor[MessageType]):
         self._logger.info("Processing log request message")
         for dataset_id, group in groupby(messages, lambda it: it.request.dataset_id):
             logger = self._get_logger(dataset_id)
-            dfs = [log_request_to_data_frame(message.request) for message in group]
-            df = pd.concat(dfs)
+            # TODO making tons of little dataframes is actually incredibly slow, maybe I need to send dtype info in the rest api?
+            # For now I'm manually reducing requests and minimizing the dataframes I create
+            # dfs = [log_request_to_data_frame(message.request) for message in group]
+            # df = pd.concat(dfs)
+            
+            giga_message: LogMessage = reduce(_reduce_request, group)
+            df = log_request_to_data_frame(giga_message.request)
             logger.log(df)
 
 
@@ -98,4 +105,13 @@ def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:
         return pd.DataFrame.from_dict(request.single)
     elif request.multiple:
         return pd.DataFrame(request.multiple.data, columns=request.multiple.columns)
+    
+def _reduce_request(acc:LogMessage, cur: LogMessage) -> LogMessage:
+    if not acc.request.multiple:
+        raise Exception("no")
+    if not cur.request.multiple:
+        raise Exception("no")
+
+    acc.request.multiple.data.extend(cur.request.multiple.data)
+    return acc
     

@@ -4,8 +4,11 @@
 default:help
 
 server: ## Run the dev server
-	# uvicorn src.ai.whylabs.container.main:app --reload
 	cd src && python -m ai.whylabs.container.startup
+
+pyspy: ## Run profiler on the dev server
+	# No good way of getting the pid of the profiling processs automatically, need to look it up and insert below 
+	sudo env "PATH=$PATH" py-spy record -o profile.svg --pid $(PROFILING_PID)
 
 docker:
 	docker build . -t whylabs/whylogs:python-latest

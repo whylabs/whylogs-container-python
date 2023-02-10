@@ -1,4 +1,5 @@
 from faster_fifo import Queue
+import time
 import asyncio
 import logging
 from abc import ABC, abstractmethod
@@ -35,6 +36,7 @@ class Actor(Process, ABC, Generic[MessageType]):
                 self.queue.put(message, timeout=_DEFAULT_POLL_WAIT_SECONDS)
                 done = True
             except Full:
+                self._logger.warn(f'Message queue full, trying again')
                 pass
 
     # TODO is Type the right type here?
@@ -46,6 +48,9 @@ class Actor(Process, ABC, Generic[MessageType]):
         while not self._stop_signal.is_set():
             try:
                 try:
+                    # if self.queue.qsize() < 1000:
+                    #     await asyncio.sleep(1)
+                    #     continue
                     messages: List[MessageType] = self.queue.get_many(timeout=0.1, max_messages_to_get=10000)
                     (batch, batch_type, next) = get_like_items(messages)
                     next_batch = batch
@@ -59,12 +64,14 @@ class Actor(Process, ABC, Generic[MessageType]):
                 # Catches KeyboardInterrupt as well, which Exception doesn't
                 pass
 
+        
         self._logger.info(f'Message processing done, sending done signal')
         self._work_done_signal.set()
 
     def run(self) -> None:
         self._loop = asyncio.get_event_loop()
         self._loop.run_until_complete(self.process_messages())
+        # self.process_messages()
 
     async def shutdown(self) -> None:
         await self.send(CloseMessage())
