@@ -13,6 +13,7 @@ MessageType = TypeVar("MessageType")
 
 _DEFAULT_POLL_WAIT_SECONDS = 0.1
 
+
 class CloseMessage:
     pass
 
@@ -32,7 +33,7 @@ class Actor(Process, ABC, Generic[MessageType]):
                 self.queue.put(message, timeout=_DEFAULT_POLL_WAIT_SECONDS)
                 done = True
             except Full:
-                self._logger.warn(f'Message queue full, trying again')
+                self._logger.warn(f"Message queue full, trying again")
                 pass
 
     @abstractmethod
@@ -53,15 +54,14 @@ class Actor(Process, ABC, Generic[MessageType]):
                 except Empty:
                     pass
             except KeyboardInterrupt as e:
-                self._logger.info(f'Shutting down actor.')
+                self._logger.info(f"Shutting down actor.")
                 pass
             except BaseException as e:
                 # Catches KeyboardInterrupt as well, which Exception doesn't
                 self._logger.exception(e)
                 pass
 
-        
-        self._logger.info(f'Message processing done, sending done signal')
+        self._logger.info(f"Message processing done, sending done signal")
         self._work_done_signal.set()
 
     def run(self) -> None:

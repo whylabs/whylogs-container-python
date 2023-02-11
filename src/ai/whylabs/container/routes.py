@@ -5,7 +5,7 @@ from ..actor.profile_actor import DebugMessage, ProfileActor, PublishMessage, Ra
 from .requests import LogRequest, LogMultiple
 import logging
 
-logger = logging.getLogger('routes')
+logger = logging.getLogger("routes")
 
 app = FastAPI()
 _DEFAULT_QUEUE_SIZE_BYTES = 1000 * 1000 * 1000
@@ -13,21 +13,18 @@ actor = ProfileActor(Queue(_DEFAULT_QUEUE_SIZE_BYTES))
 
 
 ex = LogRequest(
-    datasetId='hi',
-    multiple=LogMultiple(
-        columns=['a', 'b', 'c'],
-        data=[
-            ['foo',1,2.0],
-            ['bar',4,3.0]
-        ]
-    ),
+    datasetId="hi",
+    multiple=LogMultiple(columns=["a", "b", "c"], data=[["foo", 1, 2.0], ["bar", 4, 3.0]]),
     single=None,
 ).json()
+
+
 @app.post("/log")
 async def log(_raw_request: Request) -> None:
     b: bytes = await _raw_request.body()
     # TODO assign a dataset timestamp here asap before queueing it up for profiling
     await actor.send(RawLogMessage(b))
+
 
 @app.post("/log_docs")
 async def log_docs(body: LogRequest) -> None:
@@ -37,7 +34,10 @@ async def log_docs(body: LogRequest) -> None:
     which performs far too poorly to keep in the server process. This endpoint is just for swagger docs on the body type
     for convenience but it shouldn't actually be used.
     """
-    raise Exception('use the /log endpoint instead. This only exists for auto generated swagger documentation on the body type')
+    raise Exception(
+        "use the /log endpoint instead. This only exists for auto generated swagger documentation on the body type"
+    )
+
 
 @app.post("/publish")
 async def publish_profiles() -> None:
@@ -48,9 +48,8 @@ async def publish_profiles() -> None:
 async def log_debug_info() -> None:
     await actor.send(DebugMessage())
 
+
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    logger.info('Shutting down web server')    
+    logger.info("Shutting down web server")
     await actor.shutdown()
-
-
