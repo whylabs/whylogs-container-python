@@ -1,5 +1,5 @@
 from itertools import takewhile
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, List, Tuple, Type
 
 
 def get_like_items(items: List[Any]) -> Tuple[List[Any], Type, List[Any]]:

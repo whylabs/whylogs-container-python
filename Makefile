@@ -1,6 +1,7 @@
 # This file is created at startup after the profiling process is created. It's needed to
 # run the pyspy profiler against.
 PROFILER_PID_FILE:=/tmp/profiling_pid
+src := $(shell find src/ -name "*.py" -type f)
 
 .PHONY: server
 .PHONY: lint format format-fix test setup version_metadata help requirements default help
@@ -35,9 +36,11 @@ lint: ## Check for type issues with mypy
 
 format: ## Check for formatting issues
 	poetry run black --check --line-length 120 src
+	autoflake --check --in-place --remove-unused-variables $(src)
 
 format-fix: ## Fix formatting issues
 	poetry run black --line-length 120 src
+	autoflake --in-place --remove-unused-variables $(src)
 
 setup: ## Install dependencies with poetry
 	poetry install

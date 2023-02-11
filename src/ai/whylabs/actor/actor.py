@@ -1,5 +1,4 @@
 from faster_fifo import Queue
-import time
 import asyncio
 import logging
 from abc import ABC, abstractmethod
@@ -34,7 +33,6 @@ class Actor(Process, ABC, Generic[MessageType]):
                 done = True
             except Full:
                 self._logger.warn(f"Message queue full, trying again")
-                pass
 
     @abstractmethod
     async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
@@ -53,13 +51,11 @@ class Actor(Process, ABC, Generic[MessageType]):
                         next_batch = next
                 except Empty:
                     pass
-            except KeyboardInterrupt as e:
+            except KeyboardInterrupt:
                 self._logger.info(f"Shutting down actor.")
-                pass
             except BaseException as e:
                 # Catches KeyboardInterrupt as well, which Exception doesn't
                 self._logger.exception(e)
-                pass
 
         self._logger.info(f"Message processing done, sending done signal")
         self._work_done_signal.set()
