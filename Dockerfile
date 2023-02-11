@@ -7,7 +7,7 @@ RUN curl -sSL https://install.python-poetry.org | python3.10 -
 COPY src /opt/whylogs-container/src
 COPY poetry.lock /opt/whylogs-container/
 COPY pyproject.toml /opt/whylogs-container/
-# Because poetry needs it...
+# Because poetry needs it to install dependencies...
 COPY README.md /opt/whylogs-container/ 
 
 WORKDIR /opt/whylogs-container

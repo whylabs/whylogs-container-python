@@ -1,3 +1,7 @@
+# This file is created at startup after the profiling process is created. It's needed to
+# run the pyspy profiler against.
+PROFILER_PID_FILE:=/tmp/profiling_pid
+
 .PHONY: server
 .PHONY: lint format format-fix test setup version_metadata help requirements default help
 
@@ -7,13 +11,12 @@ server: ## Run the dev server
 	cd src && python -m ai.whylabs.container.startup
 
 pyspy: ## Run profiler on the dev server
-	# No good way of getting the pid of the profiling processs automatically, need to look it up and insert below 
-	sudo env "PATH=$PATH" py-spy record -o profile.svg --pid $(PROFILING_PID)
+	sudo env "PATH=$(PATH)" py-spy record -o profile.svg --pid $(shell cat /tmp/profiling_pid)
 
-docker:
+docker: ## Build the docker container
 	docker build . -t whylabs/whylogs:python-latest
 
-docker-push:
+docker-push: ## Push the docker container to docker hub
 	docker push whylabs/whylogs:python-latest
 
 load-test-500:
@@ -36,7 +39,7 @@ format: ## Check for formatting issues
 format-fix: ## Fix formatting issues
 	poetry run black --line-length 120 src
 
-setup:
+setup: ## Install dependencies with poetry
 	poetry install
 
 test: ## Run unit tests

@@ -13,8 +13,6 @@ MessageType = TypeVar("MessageType")
 
 _DEFAULT_POLL_WAIT_SECONDS = 0.1
 
-# Callback on the rolling logger for debug info
-
 class CloseMessage:
     pass
 
@@ -27,8 +25,6 @@ class Actor(Process, ABC, Generic[MessageType]):
         self._work_done_signal = Event()
         super().__init__()
 
-    # TODO some type issue here
-    # @retry(stop=stop.stop_after_attempt(10), wait=wait.wait_fixed(_DEFAULT_POLL_WAIT_SECONDS))
     async def send(self, message: Union[CloseMessage, MessageType]) -> None:
         done = False
         while not done:
@@ -39,7 +35,6 @@ class Actor(Process, ABC, Generic[MessageType]):
                 self._logger.warn(f'Message queue full, trying again')
                 pass
 
-    # TODO is Type the right type here?
     @abstractmethod
     async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
         pass
@@ -48,10 +43,7 @@ class Actor(Process, ABC, Generic[MessageType]):
         while not self._stop_signal.is_set():
             try:
                 try:
-                    # if self.queue.qsize() < 1000:
-                    #     await asyncio.sleep(1)
-                    #     continue
-                    messages: List[MessageType] = self.queue.get_many(timeout=0.1, max_messages_to_get=10000)
+                    messages: List[MessageType] = self.queue.get_many(timeout=0.1, max_messages_to_get=100000)
                     (batch, batch_type, next) = get_like_items(messages)
                     next_batch = batch
                     while next_batch:
@@ -60,8 +52,12 @@ class Actor(Process, ABC, Generic[MessageType]):
                         next_batch = next
                 except Empty:
                     pass
-            except BaseException:
+            except KeyboardInterrupt as e:
+                self._logger.info(f'Shutting down actor.')
+                pass
+            except BaseException as e:
                 # Catches KeyboardInterrupt as well, which Exception doesn't
+                self._logger.exception(e)
                 pass
 
         
