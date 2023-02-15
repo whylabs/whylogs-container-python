@@ -16,6 +16,8 @@ RUN curl -sSL https://install.python-poetry.org | python3.10 -
 WORKDIR /opt/whylogs-container
 RUN /root/.local/bin/poetry config virtualenvs.in-project true
 RUN /root/.local/bin/poetry install --without=dev
+# Pandas deploys a ton of tests to pypi
+RUN rm -rf .venv/lib/python3.10/site-packages/pandas/tests
 
 ## Drop extra things needed only to install/build and reinstall runtime requirements
 FROM core_dependencies
