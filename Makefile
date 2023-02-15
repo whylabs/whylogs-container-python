@@ -14,7 +14,7 @@ server: ## Run the dev server
 pyspy: ## Run profiler on the dev server
 	sudo env "PATH=$(PATH)" py-spy record -o profile.svg --pid $(shell cat /tmp/profiling_pid)
 
-docker: ## Build the docker container
+docker: requirements.txt ## Build the docker container
 	docker build . -t whylabs/whylogs:python-latest
 
 docker-push: ## Push the docker container to docker hub
