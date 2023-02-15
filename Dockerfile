@@ -1,7 +1,7 @@
 ## Install/build dependencies from apt and pip
 
 FROM ubuntu:22.04 as core_dependencies
-RUN apt-get update && apt-get install -y python3.10
+RUN apt-get update && apt-get install -y python3.10 ca-certificates
 # Copy src
 COPY src /opt/whylogs-container/src
 COPY poetry.lock /opt/whylogs-container/
