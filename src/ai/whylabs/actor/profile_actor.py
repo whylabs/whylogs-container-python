@@ -11,6 +11,24 @@ import whylogs as y
 from faster_fifo import Queue
 from whylogs.api.logger.rolling import TimedRollingLogger
 
+# # Embeddings configuration
+# from whylogs.core.resolvers import MetricSpec, ResolverSpec
+# from whylogs.core.schema import DeclarativeSchema
+# from whylogs.experimental.core.metrics.embedding_metric import (
+#     DistanceFunction,
+#     EmbeddingConfig,
+#     EmbeddingMetric,
+# )
+# from whylogs.experimental.preprocess.embeddings.selectors import PCAKMeansSelector
+# references, _ = PCAKMeansSelector(n_clusters=8, n_components=20).calculate_references(X_train)
+
+# config = EmbeddingConfig(
+#     references=references,
+#     labels=None,
+#     distance_fn=DistanceFunction.euclidean,
+# )
+
+
 from .actor import Actor, CloseMessage
 
 
@@ -51,6 +69,8 @@ MessageType = Union[DebugMessage, PublishMessage, RawLogMessage]
 class ProfileActor(Actor[MessageType]):
     def __init__(self, queue: Queue) -> None:
         super().__init__(queue)
+        # NOTE, this is created before the process forks. You can't access this from the original process via
+        # a method. You need some sort of IPC signal.
         self.loggers: Dict[str, TimedRollingLogger] = {}
 
     def _create_logger(self, dataset_id: str) -> TimedRollingLogger:
@@ -67,6 +87,7 @@ class ProfileActor(Actor[MessageType]):
     def _get_logger(self, dataset_id: str) -> TimedRollingLogger:
         if not dataset_id in self.loggers:
             self.loggers[dataset_id] = self._create_logger(dataset_id)
+            self._logger.info(f'created logger for dataset {dataset_id}')
         return self.loggers[dataset_id]
 
     async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
@@ -83,7 +104,10 @@ class ProfileActor(Actor[MessageType]):
 
     def process_close_message(self, messages: List[CloseMessage]) -> None:
         self._logger.info("Running pre shutdown operations")
-        self.process_publish_message()
+        self._logger.info(f'Closing down {len(self.loggers)} loggers')
+        for datasetId, logger in self.loggers.items():
+            self._logger.info(f'Closing whylogs logger for {datasetId}')
+            logger.close()
 
     def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
         self._logger.info("Processing log request message")
@@ -113,6 +137,7 @@ class ProfileActor(Actor[MessageType]):
             logger._do_rollover()
 
 
+
 def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:
     if request.single:
         return pd.DataFrame.from_dict(request.single)
@@ -129,6 +154,8 @@ def log_dict_to_data_frame(request: LogRequestDict) -> pd.DataFrame:
         raise Exception(f"Request missing both the single and multiple fields {request}")
 
 
+# TODO this isn't technically correct all the time. It depends on the columns being the same. The "correct" way
+# would be to further group by column configuration but that would be a lot more work. Need to figure out a nice way to fix.
 def _reduce_dicts(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestDict:
     if not acc["multiple"]:
         raise Exception("no")

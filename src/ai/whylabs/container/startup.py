@@ -31,8 +31,8 @@ if __name__ == "__main__":
     logger = logging.getLogger("startup")
     actor.daemon = True
     actor.start()
-    update_pid(actor)
     actor.join(0.1)
+    update_pid(actor)
 
     config = uvicorn.Config(
         "ai.whylabs.container.routes:app", host="0.0.0.0", port=8000, reload=True, log_level=logging.WARN

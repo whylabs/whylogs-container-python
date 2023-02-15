@@ -1,4 +1,5 @@
 from faster_fifo import Queue
+import os
 import asyncio
 import logging
 from abc import ABC, abstractmethod
@@ -6,7 +7,7 @@ from typing import TypeVar, Generic, List, Type, Union
 from queue import Full
 from multiprocessing import Process, Event
 from queue import Empty, Full
-from ...util.list_util import get_like_items
+from ...util.list_util import get_like_items, type_batched_items
 
 MessageType = TypeVar("MessageType")
 
@@ -20,12 +21,18 @@ class CloseMessage:
 class Actor(Process, ABC, Generic[MessageType]):
     def __init__(self, queue: Queue) -> None:
         self.queue = queue
-        self._logger = logging.getLogger(type(self).__name__)
-        self._stop_signal = Event()
+        self._logger = logging.getLogger(f'{type(self).__name__}_{id(self)}')
         self._work_done_signal = Event()
         super().__init__()
 
     async def send(self, message: Union[CloseMessage, MessageType]) -> None:
+        if self.queue.is_closed():
+            self._logger.warn(f'Dropping message because queue is closed.')
+            return
+
+        if isinstance(message, CloseMessage):
+            self.queue.close()
+
         done = False
         while not done:
             try:
@@ -39,26 +46,24 @@ class Actor(Process, ABC, Generic[MessageType]):
         pass
 
     async def process_messages(self) -> None:
-        while not self._stop_signal.is_set():
+        while not self._work_done_signal.is_set():
             try:
                 try:
                     messages: List[MessageType] = self.queue.get_many(timeout=0.1, max_messages_to_get=10000)
-                    (batch, batch_type, next) = get_like_items(messages)
-                    next_batch = batch
-                    while next_batch:
+                    for (batch, batch_type) in type_batched_items(messages):
                         self._logger.info(f"Processing batch of {len(batch)} {batch_type.__name__}")
                         await self.process_batch(batch, batch_type)
-                        next_batch = next
+
                 except Empty:
-                    pass
+                    if self.queue.is_closed():
+                        self._logger.info(f"Queue closed and no more messages to process.")
+                        self._work_done_signal.set()
             except KeyboardInterrupt:
                 self._logger.info(f"Shutting down actor.")
             except BaseException as e:
                 # Catches KeyboardInterrupt as well, which Exception doesn't
                 self._logger.exception(e)
 
-        self._logger.info(f"Message processing done, sending done signal")
-        self._work_done_signal.set()
 
     def run(self) -> None:
         self._loop = asyncio.get_event_loop()
@@ -66,7 +71,7 @@ class Actor(Process, ABC, Generic[MessageType]):
         # self.process_messages()
 
     async def shutdown(self) -> None:
+        self._logger.info("Sending Close message to work queue.")
         await self.send(CloseMessage())
-        self.queue.close()
-        self._stop_signal.set()
         self._work_done_signal.wait()
+        os._exit(0) # Not sure why I need this but I definitely do
