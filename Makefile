@@ -36,17 +36,17 @@ lint: ## Check for type issues with mypy
 
 format: ## Check for formatting issues
 	poetry run black --check --line-length 120 src
-	autoflake --check --in-place --remove-unused-variables $(src)
+	poetry run autoflake --check --in-place --remove-unused-variables $(src)
 
 format-fix: ## Fix formatting issues
 	poetry run black --line-length 120 src
-	autoflake --in-place --remove-unused-variables $(src)
+	poetry run autoflake --in-place --remove-unused-variables $(src)
 
 setup: ## Install dependencies with poetry
 	poetry install
 
 test: ## Run unit tests
-	pytest
+	poetry run pytest
 
 help: ## Show this help message.
 	@echo 'usage: make [target] ...'

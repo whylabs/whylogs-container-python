@@ -21,13 +21,13 @@ class CloseMessage:
 class Actor(Process, ABC, Generic[MessageType]):
     def __init__(self, queue: Queue) -> None:
         self.queue = queue
-        self._logger = logging.getLogger(f'{type(self).__name__}_{id(self)}')
+        self._logger = logging.getLogger(f"{type(self).__name__}_{id(self)}")
         self._work_done_signal = Event()
         super().__init__()
 
     async def send(self, message: Union[CloseMessage, MessageType]) -> None:
         if self.queue.is_closed():
-            self._logger.warn(f'Dropping message because queue is closed.')
+            self._logger.warn(f"Dropping message because queue is closed.")
             return
 
         if isinstance(message, CloseMessage):
@@ -64,7 +64,6 @@ class Actor(Process, ABC, Generic[MessageType]):
                 # Catches KeyboardInterrupt as well, which Exception doesn't
                 self._logger.exception(e)
 
-
     def run(self) -> None:
         self._loop = asyncio.get_event_loop()
         self._loop.run_until_complete(self.process_messages())
@@ -74,4 +73,4 @@ class Actor(Process, ABC, Generic[MessageType]):
         self._logger.info("Sending Close message to work queue.")
         await self.send(CloseMessage())
         self._work_done_signal.wait()
-        os._exit(0) # Not sure why I need this but I definitely do
+        os._exit(0)  # Not sure why I need this but I definitely do

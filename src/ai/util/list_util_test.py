@@ -37,18 +37,19 @@ def test_get_like_items_single_type() -> None:
     assert batch_type == type(1)
     assert next == []
 
+
 def test_iter() -> None:
     l = [1, 2, 3, 4, 5, "a", 6, 7, 8]
     i = 0
     for (batch, batch_type) in type_batched_items(l):
         if i == 0:
-            assert batch == [1,2,3,4,5]
+            assert batch == [1, 2, 3, 4, 5]
             assert batch_type == type(1)
         elif i == 1:
-            assert batch == ['a']
-            assert batch_type == type('a')
+            assert batch == ["a"]
+            assert batch_type == type("a")
         elif i == 2:
-            assert batch == [6,7,8]
+            assert batch == [6, 7, 8]
             assert batch_type == type(1)
         else:
             raise Exception("Shouldn't happen")

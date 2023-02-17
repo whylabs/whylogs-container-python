@@ -6,3 +6,4 @@
 *.pyc
 profile.svg
 data
+local.env
