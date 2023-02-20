@@ -44,6 +44,13 @@ async def publish_profiles() -> None:
     await actor.send(PublishMessage())
 
 
+@app.post("/health")
+async def health() -> None:
+    # TODO implement this in such a way that forces anything that will go wrong to go wrong now, like an incorrectly
+    # built container config
+    pass
+
+
 @app.post("/logDebugInfo")
 async def log_debug_info() -> None:
     await actor.send(DebugMessage())

@@ -7,6 +7,7 @@ COPY src /opt/whylogs-container/src
 COPY poetry.lock /opt/whylogs-container/
 COPY pyproject.toml /opt/whylogs-container/
 COPY README.md /opt/whylogs-container/
+COPY whylabs_toolkit-0.0.1-py3-none-any.whl /opt/whylogs-container/
 
 ## Install/build pip dependencies
 FROM core_dependencies as python_dependencies

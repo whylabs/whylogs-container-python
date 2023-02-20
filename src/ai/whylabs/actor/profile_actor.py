@@ -5,29 +5,12 @@ import orjson
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Type, Union, cast, TypedDict
 from ..container.requests import LogRequest, DataTypes
+from ..container.config import get_dataset_options, ContainerConfig
 
 import pandas as pd
 import whylogs as y
 from faster_fifo import Queue
 from whylogs.api.logger.rolling import TimedRollingLogger
-
-# # Embeddings configuration
-# from whylogs.core.resolvers import MetricSpec, ResolverSpec
-# from whylogs.core.schema import DeclarativeSchema
-# from whylogs.experimental.core.metrics.embedding_metric import (
-#     DistanceFunction,
-#     EmbeddingConfig,
-#     EmbeddingMetric,
-# )
-# from whylogs.experimental.preprocess.embeddings.selectors import PCAKMeansSelector
-# references, _ = PCAKMeansSelector(n_clusters=8, n_components=20).calculate_references(X_train)
-
-# config = EmbeddingConfig(
-#     references=references,
-#     labels=None,
-#     distance_fn=DistanceFunction.euclidean,
-# )
-
 
 from .actor import Actor, CloseMessage
 
@@ -67,27 +50,39 @@ MessageType = Union[DebugMessage, PublishMessage, RawLogMessage]
 
 
 class ProfileActor(Actor[MessageType]):
-    def __init__(self, queue: Queue) -> None:
+    def __init__(self, queue: Queue, env_vars: ContainerConfig = ContainerConfig()) -> None:
         super().__init__(queue)
         # NOTE, this is created before the process forks. You can't access this from the original process via
         # a method. You need some sort of IPC signal.
         self.loggers: Dict[str, TimedRollingLogger] = {}
+        self.env_vars = env_vars
 
     def _create_logger(self, dataset_id: str) -> TimedRollingLogger:
-        logger = y.logger(mode="rolling", interval=5, when="M", base_name="profile_")
-        # TODO get org id, api key from config
+        options = get_dataset_options(dataset_id)
+        interval = (
+            options and options.whylabs_upload_cadence.interval
+        ) or self.env_vars.default_whylabs_upload_interval
+        when = (
+            options
+            and options.whylabs_upload_cadence.granularity.value
+            or self.env_vars.default_whylabs_upload_cadence.value
+        )
+
+        logger = y.logger(
+            mode="rolling", interval=interval, when=when, base_name="profile_", schema=options and options.schema
+        )
         logger.append_writer(
             "whylabs",
-            org_id="org-JpsdM6",
-            api_key="Cew2sT596i.v8mfbaoJYUeIZdu83Q5jSgv7plAFACTya9Nq85SapA433EOLuQfvX",
+            org_id=self.env_vars.whylabs_org_id,
+            api_key=self.env_vars.whylabs_api_key,
             dataset_id=dataset_id,
         )
+        self._logger.info(f"Created logger for {dataset_id} with interval {interval} and upload cadence {when}")
         return logger
 
     def _get_logger(self, dataset_id: str) -> TimedRollingLogger:
         if not dataset_id in self.loggers:
             self.loggers[dataset_id] = self._create_logger(dataset_id)
-            self._logger.info(f'created logger for dataset {dataset_id}')
         return self.loggers[dataset_id]
 
     async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
@@ -104,9 +99,9 @@ class ProfileActor(Actor[MessageType]):
 
     def process_close_message(self, messages: List[CloseMessage]) -> None:
         self._logger.info("Running pre shutdown operations")
-        self._logger.info(f'Closing down {len(self.loggers)} loggers')
+        self._logger.info(f"Closing down {len(self.loggers)} loggers")
         for datasetId, logger in self.loggers.items():
-            self._logger.info(f'Closing whylogs logger for {datasetId}')
+            self._logger.info(f"Closing whylogs logger for {datasetId}")
             logger.close()
 
     def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
@@ -135,7 +130,6 @@ class ProfileActor(Actor[MessageType]):
         for dataset_id, logger in self.loggers.items():
             self._logger.info(f"Force rolling dataset {dataset_id}")
             logger._do_rollover()
-
 
 
 def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:
