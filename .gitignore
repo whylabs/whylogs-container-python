@@ -7,3 +7,5 @@
 profile.svg
 data
 local.env
+ai/local
+src/ai/local/
