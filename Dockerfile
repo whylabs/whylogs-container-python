@@ -28,4 +28,5 @@ FROM core_dependencies
 WORKDIR /opt/whylogs-container
 COPY --from=python_dependencies /opt/whylogs-container ./
 COPY src /opt/whylogs-container/src
+EXPOSE 8000
 ENTRYPOINT [ "/bin/bash", "-c", "source .venv/bin/activate; cd src; python3.10 -m ai.whylabs.container.startup" ]

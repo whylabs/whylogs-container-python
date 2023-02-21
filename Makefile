@@ -9,7 +9,7 @@ src := $(shell find src/ -name "*.py" -type f)
 default:help
 
 server: ## Run the dev server
-	cd src && python -m ai.whylabs.container.startup
+	poetry run bash -c 'export $$(cat local.env | xargs); cd src && python -m ai.whylabs.container.startup'
 
 pyspy: ## Run profiler on the dev server
 	sudo env "PATH=$(PATH)" py-spy record -o profile.svg --pid $(shell cat /tmp/profiling_pid)
