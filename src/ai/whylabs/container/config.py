@@ -33,10 +33,12 @@ class ContainerConfig:
         self.whylabs_api_key = self._require_env(EnvVarNames.WHYLABS_API_KEY)
         self.whylabs_org_id = self._require_env(EnvVarNames.WHYLABS_ORG_ID)
 
-        self.fail_startup_without_config = self._read_env(EnvVarNames.FAIL_STARTUP_WITHOUT_CONFIG) == 'True'
+        self.fail_startup_without_config = self._read_env(EnvVarNames.FAIL_STARTUP_WITHOUT_CONFIG) == "True"
 
         default_dataset_cadence = self._read_env(EnvVarNames.DEFAULT_WHYLABS_DATASET_CADENCE)
-        self.default_dataset_cadence = default_dataset_cadence and DatasetCadence[default_dataset_cadence] or DatasetCadence.DAILY
+        self.default_dataset_cadence = (
+            default_dataset_cadence and DatasetCadence[default_dataset_cadence] or DatasetCadence.DAILY
+        )
 
         default_whylabs_upload_cadence = self._read_env(EnvVarNames.DEFAULT_WHYLABS_UPLOAD_CADENCE)
         self.default_whylabs_upload_cadence = (
@@ -46,7 +48,9 @@ class ContainerConfig:
         )
 
         default_whylabs_upload_interval = self._read_env(EnvVarNames.DEFAULT_WHYLABS_UPLOAD_INTERVAL)
-        self.default_whylabs_upload_interval = default_whylabs_upload_interval and int(default_whylabs_upload_interval) or 1
+        self.default_whylabs_upload_interval = (
+            default_whylabs_upload_interval and int(default_whylabs_upload_interval) or 1
+        )
 
     def _require_env(self, var: EnvVarNames) -> str:
         try:
@@ -76,7 +80,8 @@ def _load_custom_options() -> Optional[Dict[str, DatasetOptions]]:
         _logger.warning("No custom whylogs configuration found.")
         if config.fail_startup_without_config:
             _logger.exception(
-                "Failing startup because no custom whylogs configuration was found and FAIL_STARTUP_WITHOUT_CONFIG env var is True", e
+                "Failing startup because no custom whylogs configuration was found and FAIL_STARTUP_WITHOUT_CONFIG env var is True",
+                e,
             )
             os._exit(1)
         return None
