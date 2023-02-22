@@ -676,6 +676,14 @@ slack = ["slack-sdk"]
 telegram = ["requests"]
 
 [[package]]
+name = "types-python-dateutil"
+version = "2.8.19.8"
+description = "Typing stubs for python-dateutil"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "typing-extensions"
 version = "4.5.0"
 description = "Backported and Experimental Type Hints for Python 3.7+"
@@ -788,7 +796,7 @@ url = "whylabs_toolkit-0.0.1-py3-none-any.whl"
 
 [[package]]
 name = "whylogs"
-version = "1.1.26"
+version = "1.1.27.dev1"
 description = "Profile and monitor your ML data pipeline end-to-end"
 category = "main"
 optional = false
@@ -806,7 +814,7 @@ whylogs-sketching = ">=3.4.1.dev3"
 datasets = ["pandas"]
 docs = ["furo (>=2022.3.4,<2023.0.0)", "ipython_genutils (>=0.2.0,<0.3.0)", "myst-parser[sphinx] (>=0.17.2,<0.18.0)", "nbconvert (>=7.0.0,<8.0.0)", "nbsphinx (>=0.8.9,<0.9.0)", "sphinx", "sphinx-autoapi", "sphinx-autobuild (>=2021.3.14,<2022.0.0)", "sphinx-copybutton (>=0.5.0,<0.6.0)", "sphinx-inline-tabs", "sphinxext-opengraph (>=0.6.3,<0.7.0)"]
 embeddings = ["scikit-learn (>=1.0.2,<2.0.0)"]
-fugue = ["fugue (>=0.8.0,<0.9.0)"]
+fugue = ["fugue (>=0.8.1,<0.9.0)"]
 gcs = ["google-cloud-storage (>=2.5.0,<3.0.0)"]
 image = ["Pillow (>=9.2.0,<10.0.0)"]
 mlflow = ["mlflow-skinny (>=1.26.1,<2.0.0)"]
@@ -826,7 +834,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "cca99a811cf0412d5ce12ac715b445297ab788a6211d2cf5a53ecd680fe6907e"
+content-hash = "c417f6220cebb34453efaeebf8c99ce2b54cb417738ed116db35077bb31e8cb1"
 
 [metadata.files]
 anyio = [
@@ -1529,6 +1537,10 @@ tqdm = [
     {file = "tqdm-4.64.1-py2.py3-none-any.whl", hash = "sha256:6fee160d6ffcd1b1c68c65f14c829c22832bc401726335ce92c52d395944a6a1"},
     {file = "tqdm-4.64.1.tar.gz", hash = "sha256:5f4f682a004951c1b450bc753c710e9280c5746ce6ffedee253ddbcbf54cf1e4"},
 ]
+types-python-dateutil = [
+    {file = "types-python-dateutil-2.8.19.8.tar.gz", hash = "sha256:316c6b107d055bbd06324b71362e6104102220e6988aa4a388550aa3a8ad5d06"},
+    {file = "types_python_dateutil-2.8.19.8-py3-none-any.whl", hash = "sha256:6b44741d3e79b2f2ba595f6bfa96f1a5091a00703848547efb3bc5b71df3cf9d"},
+]
 typing-extensions = [
     {file = "typing_extensions-4.5.0-py3-none-any.whl", hash = "sha256:fb33085c39dd998ac16d1431ebc293a8b3eedd00fd4a32de0ff79002c19511b4"},
     {file = "typing_extensions-4.5.0.tar.gz", hash = "sha256:5cb5f4a79139d699607b3ef622a1dedafa84e115ab0024e0d9c044a9479ca7cb"},
@@ -1739,8 +1751,8 @@ whylabs-toolkit = [
     {file = "whylabs_toolkit-0.0.1-py3-none-any.whl", hash = "sha256:7a0182983dbd5eb9bda85068bce8f64e50e4c726fa273271a981a5ce3f3f5a40"},
 ]
 whylogs = [
-    {file = "whylogs-1.1.26-py3-none-any.whl", hash = "sha256:ac6ac2cb6bf619ca5318196eac82d2586109c241e49873f62343d7393c0020f3"},
-    {file = "whylogs-1.1.26.tar.gz", hash = "sha256:666622641fb45e87c4d7b07751bc144d99e523abaf1323513048f64de4b34fd0"},
+    {file = "whylogs-1.1.27.dev1-py3-none-any.whl", hash = "sha256:fffe8c794e66daf5a64252d2a7e49724c39942e4c3ab1ad669f394a4ef5b889f"},
+    {file = "whylogs-1.1.27.dev1.tar.gz", hash = "sha256:a8d9e5dc7d1dd1f9b499bd709798bccc5d01a7bcbf620812aaf8043efdd4021b"},
 ]
 whylogs-sketching = [
     {file = "whylogs-sketching-3.4.1.dev3.tar.gz", hash = "sha256:40b90eb9d5e4cbbfa63f6a1f3a3332b72258d270044b79030dc5d720fddd9499"},

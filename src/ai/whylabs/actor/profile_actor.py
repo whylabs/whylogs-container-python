@@ -1,4 +1,5 @@
 from functools import reduce
+from whylabs_toolkit.container.config_types import DatasetCadence
 import os
 from itertools import groupby
 import orjson
@@ -6,6 +7,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Type, Union, cast, TypedDict
 from ..container.requests import LogRequest, DataTypes
 from ..container.config import get_dataset_options, ContainerConfig
+from ...util.time import truncate_time_ms, TimeGranularity
 
 import pandas as pd
 import whylogs as y
@@ -22,6 +24,7 @@ class MultipleDict(TypedDict):
 
 class LogRequestDict(TypedDict):
     datasetId: str
+    timestamp: int
     single: Optional[Dict[str, DataTypes]]
     multiple: Optional[MultipleDict]
 
@@ -37,9 +40,19 @@ class PublishMessage:
 @dataclass
 class RawLogMessage:
     request: bytes
+    request_time: int
 
     def to_log_request_dict(self) -> LogRequestDict:
         d: LogRequestDict = orjson.loads(self.request)
+        if "timestamp" not in d or d["timestamp"] is None:
+            d["timestamp"] = self.request_time
+
+        if "datasetId" not in d or d["datasetId"] is None:
+            raise Exception(f"Request missing dataset id {d}")
+
+        if ("single" not in d or d["single"] is None) and ("multiple" not in d or d["multiple"] is None):
+            raise Exception(f"Request has neither single nor multiple field {d}")
+
         return d
 
 
@@ -107,15 +120,21 @@ class ProfileActor(Actor[MessageType]):
     def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
         self._logger.info("Processing log request message")
         log_dicts = [m.to_log_request_dict() for m in messages]
+
         for dataset_id, group in groupby(log_dicts, lambda it: it["datasetId"]):
             logger = self._get_logger(dataset_id)
-            giga_message: LogRequestDict = reduce(_reduce_dicts, group)
-            df = log_dict_to_data_frame(giga_message)
-            logger.log(df)
+            options = get_dataset_options(dataset_id)
+            cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence
+
+            for dataset_timestamp, sub_group in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
+                self._logger.info(f"Logging data for ts {dataset_timestamp} in dataset {dataset_id}")
+                giga_message: LogRequestDict = reduce(_reduce_dicts, sub_group)
+                df = log_dict_to_data_frame(giga_message)
+                logger.log(df)
+                # TODO whylogs logger needs to be updated to support passing timestamp in at the log level.
+                # logger.log(df, dataset_timestamp=dataset_timestamp)
 
     def process_debug_message(self, messages: List[DebugMessage]) -> None:
-        # TODO @jamie why does this always return something even after it writes to whylabs? Shouldn't everything be purged locally?
-        # TODO repro fully
         for dataset_id, logger in self.loggers.items():
             profiles = logger._get_matching_profiles()
             for profile in profiles:
@@ -158,3 +177,8 @@ def _reduce_dicts(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestDict:
 
     acc["multiple"]["data"].extend(cur["multiple"]["data"])
     return acc
+
+
+def determine_dataset_timestamp(cadence: DatasetCadence, request: LogRequestDict) -> int:
+    ts = request["timestamp"]
+    return truncate_time_ms(ts, TimeGranularity.D if cadence == DatasetCadence.DAILY else TimeGranularity.H)

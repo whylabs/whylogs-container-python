@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-DataTypes = Union[str, int, float, bool]
+DataTypes = Union[str, int, float, bool, List[float], List[int], List[str]]
 
 
 class LogMultiple(BaseModel):
@@ -12,6 +12,6 @@ class LogMultiple(BaseModel):
 
 class LogRequest(BaseModel):
     dataset_id: str = Field(None, alias="datasetId")
-    # timestamp: Optional[int] # TODO enable in a follow up. Forces me to do a lot of date math and grouping for bulk message handling
+    timestamp: Optional[int]
     single: Optional[Dict[str, DataTypes]]
     multiple: Optional[LogMultiple]
