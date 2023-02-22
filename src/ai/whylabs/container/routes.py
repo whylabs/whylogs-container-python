@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Body
 from faster_fifo import Queue
 
 from ..actor.profile_actor import DebugMessage, ProfileActor, PublishMessage, RawLogMessage
+from ...util.time import current_time_ms
 from .requests import LogRequest, LogMultiple
 import logging
 
@@ -22,8 +23,7 @@ ex = LogRequest(
 @app.post("/log")
 async def log(_raw_request: Request) -> None:
     b: bytes = await _raw_request.body()
-    # TODO assign a dataset timestamp here asap before queueing it up for profiling
-    await actor.send(RawLogMessage(b))
+    await actor.send(RawLogMessage(request=b, request_time=current_time_ms()))
 
 
 @app.post("/log_docs")
