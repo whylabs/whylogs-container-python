@@ -1,5 +1,5 @@
 from functools import reduce
-from whylabs_toolkit.container.config_types import DatasetCadence
+from whylabs_toolkit.container.config_types import DatasetCadence, DatasetUploadCadenceGranularity
 import os
 from itertools import groupby
 import orjson
@@ -12,7 +12,10 @@ from ...util.time import truncate_time_ms, TimeGranularity
 import pandas as pd
 import whylogs as y
 from faster_fifo import Queue
-from whylogs.api.logger.rolling import TimedRollingLogger
+from whylogs.api.writer import Writers
+from whylogs.api.logger.experimental.multi_dataset_logger.multi_dataset_rolling_logger import MultiDatasetRollingLogger
+from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity 
+from whylogs.api.logger.experimental.multi_dataset_logger.time_util import Schedule 
 
 from .actor import Actor, CloseMessage
 
@@ -67,33 +70,50 @@ class ProfileActor(Actor[MessageType]):
         super().__init__(queue)
         # NOTE, this is created before the process forks. You can't access this from the original process via
         # a method. You need some sort of IPC signal.
-        self.loggers: Dict[str, TimedRollingLogger] = {}
+        self.loggers: Dict[str, MultiDatasetRollingLogger] = {}
         self.env_vars = env_vars
 
-    def _create_logger(self, dataset_id: str) -> TimedRollingLogger:
+    def _create_logger(self, dataset_id: str) -> MultiDatasetRollingLogger:
         options = get_dataset_options(dataset_id)
-        interval = (
+        upload_interval = (
             options and options.whylabs_upload_cadence.interval
         ) or self.env_vars.default_whylabs_upload_interval
-        when = (
-            options
-            and options.whylabs_upload_cadence.granularity.value
-            or self.env_vars.default_whylabs_upload_cadence.value
+        upload_cadence = (
+            options and options.whylabs_upload_cadence.granularity
+        ) or self.env_vars.default_whylabs_upload_cadence
+
+        dataset_cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence
+
+        if dataset_cadence == DatasetCadence.DAILY:
+            aggregate_by = yTimeGranularity.Day
+        elif dataset_cadence == DatasetCadence.HOURLY:
+            aggregate_by = yTimeGranularity.Hour
+        else:
+            raise Exception(f"Unknown dataset cadence {dataset_cadence}")
+
+        if upload_cadence == DatasetUploadCadenceGranularity.DAY:
+            schedule = Schedule(cadence=yTimeGranularity.Day, interval=upload_interval)
+        elif upload_cadence == DatasetUploadCadenceGranularity.HOUR:
+            schedule = Schedule(cadence=yTimeGranularity.Hour, interval=upload_interval)
+        elif upload_cadence == DatasetUploadCadenceGranularity.MINUTE:
+            schedule = Schedule(cadence=yTimeGranularity.Minute, interval=upload_interval)
+
+        whylabs_writer = Writers.get(
+            "whylabs", org_id=self.env_vars.whylabs_org_id, api_key=self.env_vars.whylabs_api_key, dataset_id=dataset_id
+        )
+        logger = MultiDatasetRollingLogger(
+            aggregate_by=aggregate_by,
+            writers=[whylabs_writer],
+            schema=options and options.schema,
+            write_schedule=schedule,
         )
 
-        logger = y.logger(
-            mode="rolling", interval=interval, when=when, base_name="profile_", schema=options and options.schema
+        self._logger.info(
+            f"Created logger for {dataset_id} with interval {upload_interval} and upload cadence {upload_cadence}"
         )
-        logger.append_writer(
-            "whylabs",
-            org_id=self.env_vars.whylabs_org_id,
-            api_key=self.env_vars.whylabs_api_key,
-            dataset_id=dataset_id,
-        )
-        self._logger.info(f"Created logger for {dataset_id} with interval {interval} and upload cadence {when}")
         return logger
 
-    def _get_logger(self, dataset_id: str) -> TimedRollingLogger:
+    def _get_logger(self, dataset_id: str) -> MultiDatasetRollingLogger:
         if not dataset_id in self.loggers:
             self.loggers[dataset_id] = self._create_logger(dataset_id)
         return self.loggers[dataset_id]
@@ -130,9 +150,7 @@ class ProfileActor(Actor[MessageType]):
                 self._logger.info(f"Logging data for ts {dataset_timestamp} in dataset {dataset_id}")
                 giga_message: LogRequestDict = reduce(_reduce_dicts, sub_group)
                 df = log_dict_to_data_frame(giga_message)
-                logger.log(df)
-                # TODO whylogs logger needs to be updated to support passing timestamp in at the log level.
-                # logger.log(df, dataset_timestamp=dataset_timestamp)
+                logger.log(df, timestamp_ms=dataset_timestamp, sync=True)
 
     def process_debug_message(self, messages: List[DebugMessage]) -> None:
         for dataset_id, logger in self.loggers.items():
@@ -148,7 +166,7 @@ class ProfileActor(Actor[MessageType]):
         self._logger.debug(f"Force publishing profiles")
         for dataset_id, logger in self.loggers.items():
             self._logger.info(f"Force rolling dataset {dataset_id}")
-            logger._do_rollover()
+            logger.flush()
 
 
 def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:

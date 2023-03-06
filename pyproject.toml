@@ -15,8 +15,8 @@ pandas = "^1.5.2"
 faster-fifo = "^1.4.2"
 requests = "^2.28.2"
 orjson = "^3.8.6"
-whylabs-toolkit = {path = "whylabs_toolkit-0.0.1-py3-none-any.whl"}
-whylogs = {version = "1.1.27.dev1", extras = ["embeddings", "whylabs"]}
+whylogs = {version = "1.1.29.dev2", extras = ["embeddings", "whylabs"]}
+whylabs-toolkit = "^0.0.1"
 
 [tool.poetry.group.dev.dependencies]
 black = "^22.12.0"

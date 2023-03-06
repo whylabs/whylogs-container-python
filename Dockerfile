@@ -14,7 +14,6 @@ RUN curl -sSL https://install.python-poetry.org | python3.10 -
 # Copy poetry files over for python dependencies
 COPY poetry.lock /opt/whylogs-container/
 COPY pyproject.toml /opt/whylogs-container/
-COPY whylabs_toolkit-0.0.1-py3-none-any.whl /opt/whylogs-container/
 WORKDIR /opt/whylogs-container
 RUN /root/.local/bin/poetry config virtualenvs.in-project true
 RUN /root/.local/bin/poetry install --no-root --without=dev
