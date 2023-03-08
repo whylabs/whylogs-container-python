@@ -802,7 +802,7 @@ whylogs = ">=1.1.26,<2.0.0"
 
 [[package]]
 name = "whylogs"
-version = "1.1.29.dev2"
+version = "1.1.29"
 description = "Profile and monitor your ML data pipeline end-to-end"
 category = "main"
 optional = false
@@ -810,10 +810,8 @@ python-versions = ">=3.7.1,<4"
 
 [package.dependencies]
 protobuf = ">=3.19.4"
-requests = {version = ">=2.27,<3.0", optional = true, markers = "extra == \"viz\" or extra == \"whylabs\""}
 scikit-learn = {version = ">=1.0.2,<2.0.0", optional = true, markers = "extra == \"embeddings\""}
 typing-extensions = {version = ">=3.10", markers = "python_version < \"3.11\""}
-whylabs-client = {version = ">=0.4.2", optional = true, markers = "extra == \"viz\" or extra == \"whylabs\""}
 whylogs-sketching = ">=3.4.1.dev3"
 
 [package.extras]
@@ -840,7 +838,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e56fa7c56c8cbc9082e0a03c9e35c50dbdbaf95bbd1b5f9635dfdb689f06bffd"
+content-hash = "e9a85e9d1957bbdf8bb4b4857077bd8b753665228bb8ed95430b109300ff2570"
 
 [metadata.files]
 anyio = [
@@ -1762,8 +1760,8 @@ whylabs-toolkit = [
     {file = "whylabs_toolkit-0.0.1.tar.gz", hash = "sha256:d2f7c4ef68fd70e403d5dfafa4d4c24876506524ceb73198662b0b9e81a0b369"},
 ]
 whylogs = [
-    {file = "whylogs-1.1.29.dev2-py3-none-any.whl", hash = "sha256:65d2d04188f8f689cac02dc69d62057e320d0fdd6333e166c7043e6058476722"},
-    {file = "whylogs-1.1.29.dev2.tar.gz", hash = "sha256:9564f029ef3f3b379c0a98cab8d9fe4ab20a4b859b7d33dec5355ffdd4c0eb1d"},
+    {file = "whylogs-1.1.29-py3-none-any.whl", hash = "sha256:413d1693919b61f829cc8963a2ee1572cbe928dfac13020a048e93af33608f44"},
+    {file = "whylogs-1.1.29.tar.gz", hash = "sha256:05878908189faa5b4a8c77c59fd3e62fd3a1af475cea97a16af66e1046a73f44"},
 ]
 whylogs-sketching = [
     {file = "whylogs-sketching-3.4.1.dev3.tar.gz", hash = "sha256:40b90eb9d5e4cbbfa63f6a1f3a3332b72258d270044b79030dc5d720fddd9499"},

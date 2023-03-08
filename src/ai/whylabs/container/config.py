@@ -65,6 +65,9 @@ class ContainerConfig:
             default_whylabs_upload_interval and int(default_whylabs_upload_interval) or 1
         )
 
+    def auth_disabled(self) -> bool:
+        return self.disable_container_password
+
     def _require_env(self, var: EnvVarNames) -> str:
         try:
             return os.environ[var.name]

@@ -15,8 +15,8 @@ pandas = "^1.5.2"
 faster-fifo = "^1.4.2"
 requests = "^2.28.2"
 orjson = "^3.8.6"
-whylogs = {version = "1.1.29.dev2", extras = ["embeddings", "whylabs"]}
 whylabs-toolkit = "^0.0.1"
+whylogs = {version = "1.1.29", extras = ["embeddings", "whlabs"]}
 
 [tool.poetry.group.dev.dependencies]
 black = "^22.12.0"

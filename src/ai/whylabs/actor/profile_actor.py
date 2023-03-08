@@ -1,68 +1,32 @@
 from functools import reduce
+import numpy as np
+import time
 from whylabs_toolkit.container.config_types import DatasetCadence, DatasetUploadCadenceGranularity
 import os
 from itertools import groupby
-import orjson
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Type, Union, cast, TypedDict
-from ..container.requests import LogRequest, DataTypes
+from typing import Dict, List, Optional, Type, Union, cast
+from ..container.requests import LogRequest
 from ..container.config import get_dataset_options, ContainerConfig
 from ...util.time import truncate_time_ms, TimeGranularity
 
 import pandas as pd
-import whylogs as y
 from faster_fifo import Queue
 from whylogs.api.writer import Writers
 from whylogs.api.logger.experimental.multi_dataset_logger.multi_dataset_rolling_logger import MultiDatasetRollingLogger
-from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity 
-from whylogs.api.logger.experimental.multi_dataset_logger.time_util import Schedule 
+from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity
+from whylogs.api.logger.experimental.multi_dataset_logger.time_util import Schedule
 
+from .profile_actor_messages import (
+    DebugMessage,
+    PublishMessage,
+    RawLogMessage,
+    RawLogEmbeddingsMessage,
+    LogEmbeddingRequestDict,
+    LogRequestDict,
+)
 from .actor import Actor, CloseMessage
 
-
-class MultipleDict(TypedDict):
-    columns: List[str]
-    data: List[List[DataTypes]]
-
-
-class LogRequestDict(TypedDict):
-    datasetId: str
-    timestamp: int
-    single: Optional[Dict[str, DataTypes]]
-    multiple: Optional[MultipleDict]
-
-
-class DebugMessage:
-    pass
-
-
-class PublishMessage:
-    pass
-
-
-@dataclass
-class RawLogMessage:
-    request: bytes
-    request_time: int
-
-    def to_log_request_dict(self) -> LogRequestDict:
-        d: LogRequestDict = orjson.loads(self.request)
-        if "timestamp" not in d or d["timestamp"] is None:
-            d["timestamp"] = self.request_time
-
-        if "datasetId" not in d or d["datasetId"] is None:
-            raise Exception(f"Request missing dataset id {d}")
-
-        if ("single" not in d or d["single"] is None) and ("multiple" not in d or d["multiple"] is None):
-            raise Exception(f"Request has neither single nor multiple field {d}")
-
-        return d
-
-
-MessageType = Union[DebugMessage, PublishMessage, RawLogMessage]
-
-# TODO config structure
-# - https://whylabs.github.io/whylogs-container-docs/whylogs-container/ai.whylabs.services.whylogs.core.config/-env-var-names/index.html?query=enum%20EnvVarNames%20:%20Enum%3CEnvVarNames%3E
+MessageType = Union[DebugMessage, PublishMessage, RawLogMessage, RawLogEmbeddingsMessage]
 
 
 class ProfileActor(Actor[MessageType]):
@@ -118,13 +82,15 @@ class ProfileActor(Actor[MessageType]):
             self.loggers[dataset_id] = self._create_logger(dataset_id)
         return self.loggers[dataset_id]
 
-    async def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
+    def process_batch(self, batch: List[MessageType], batch_type: Type) -> None:
         if batch_type == DebugMessage:
             self.process_debug_message(cast(List[DebugMessage], batch))
         elif batch_type == PublishMessage:
             self.process_publish_message(cast(List[PublishMessage], batch))
         elif batch_type == RawLogMessage:
             self.process_log_dicts(cast(List[RawLogMessage], batch))
+        elif batch_type == RawLogEmbeddingsMessage:
+            self.process_log_embeddings_dicts(cast(List[RawLogEmbeddingsMessage], batch))
         elif batch_type == CloseMessage:
             self.process_close_message(cast(List[CloseMessage], batch))
         else:
@@ -136,6 +102,31 @@ class ProfileActor(Actor[MessageType]):
         for datasetId, logger in self.loggers.items():
             self._logger.info(f"Closing whylogs logger for {datasetId}")
             logger.close()
+
+    def process_log_embeddings_dicts(self, messages: List[RawLogEmbeddingsMessage]) -> None:
+        self._logger.info("Processing log embeddings request message")
+        log_dicts = [m.to_log_embeddings_request_dict() for m in messages]
+
+        for dataset_id, group in groupby(log_dicts, lambda it: it["datasetId"]):
+            logger = self._get_logger(dataset_id)
+            options = get_dataset_options(dataset_id)
+            cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence
+
+            for dataset_timestamp, sub_group in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
+                self._logger.info(f"Logging embeddings for ts {dataset_timestamp} in dataset {dataset_id}")
+                giga_message: LogEmbeddingRequestDict = reduce(_reduce_embedding_dicts, sub_group)
+                row = log_dict_to_embedding_matrix(giga_message)
+
+                row_count = 0
+                for embeddings in row.values():
+                    row_count += len(embeddings)
+
+                start = time.perf_counter()
+                self._logger.warning(row)
+                logger.log(row, timestamp_ms=dataset_timestamp, sync=True)
+                self._logger.debug(
+                    f'Took {time.perf_counter() - start}s to log {row_count} rows for {len(giga_message["embeddings"])} columns'
+                )
 
     def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
         self._logger.info("Processing log request message")
@@ -150,7 +141,9 @@ class ProfileActor(Actor[MessageType]):
                 self._logger.info(f"Logging data for ts {dataset_timestamp} in dataset {dataset_id}")
                 giga_message: LogRequestDict = reduce(_reduce_dicts, sub_group)
                 df = log_dict_to_data_frame(giga_message)
+                start = time.perf_counter()
                 logger.log(df, timestamp_ms=dataset_timestamp, sync=True)
+                self._logger.debug(f"Took {time.perf_counter() - start}s to log {len(df.index)}")
 
     def process_debug_message(self, messages: List[DebugMessage]) -> None:
         for dataset_id, logger in self.loggers.items():
@@ -185,6 +178,13 @@ def log_dict_to_data_frame(request: LogRequestDict) -> pd.DataFrame:
         raise Exception(f"Request missing both the single and multiple fields {request}")
 
 
+def log_dict_to_embedding_matrix(request: LogEmbeddingRequestDict) -> Dict[str, np.ndarray]:
+    row: Dict[str, np.ndarray] = {}
+    for col, embeddings in request["embeddings"].items():
+        row[col] = np.array(embeddings)
+    return row
+
+
 # TODO this isn't technically correct all the time. It depends on the columns being the same. The "correct" way
 # would be to further group by column configuration but that would be a lot more work. Need to figure out a nice way to fix.
 def _reduce_dicts(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestDict:
@@ -197,6 +197,18 @@ def _reduce_dicts(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestDict:
     return acc
 
 
-def determine_dataset_timestamp(cadence: DatasetCadence, request: LogRequestDict) -> int:
+def _reduce_embedding_dicts(acc: LogEmbeddingRequestDict, cur: LogEmbeddingRequestDict) -> LogEmbeddingRequestDict:
+    for col, embeddings in cur["embeddings"].items():
+        if col not in acc["embeddings"]:
+            acc["embeddings"][col] = []
+
+        acc["embeddings"][col].extend(embeddings)
+
+    return acc
+
+
+def determine_dataset_timestamp(
+    cadence: DatasetCadence, request: Union[LogRequestDict, LogEmbeddingRequestDict]
+) -> int:
     ts = request["timestamp"]
     return truncate_time_ms(ts, TimeGranularity.D if cadence == DatasetCadence.DAILY else TimeGranularity.H)

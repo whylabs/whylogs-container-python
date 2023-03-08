@@ -15,10 +15,10 @@ pyspy: ## Run profiler on the dev server
 	sudo env "PATH=$(PATH)" py-spy record -o profile.svg --pid $(shell cat /tmp/profiling_pid)
 
 docker: ## Build the docker container
-	docker build . -t whylabs/whylogs:python-latest
+	docker build . -t whylabs/whylogs:py-latest
 
 docker-push: ## Push the docker container to docker hub
-	docker push whylabs/whylogs:python-latest
+	docker push whylabs/whylogs:py-latest
 
 load-test-500:
 	./hey -z 10s -n 1000 -c 4 -m POST -D data/data-500.csv 'http://localhost:8000/pipe'
