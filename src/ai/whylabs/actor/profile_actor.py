@@ -1,30 +1,34 @@
-from functools import reduce
-import numpy as np
-import time
-from whylabs_toolkit.container.config_types import DatasetCadence, DatasetUploadCadenceGranularity
 import os
+import time
+from functools import reduce
 from itertools import groupby
 from typing import Dict, List, Optional, Type, Union, cast
-from ..container.requests import LogRequest
-from ..container.config import get_dataset_options, ContainerConfig
-from ...util.time import truncate_time_ms, TimeGranularity
 
-import pandas as pd
 from faster_fifo import Queue
-from whylogs.api.writer import Writers
+from whylabs_toolkit.container.config_types import DatasetCadence, DatasetUploadCadenceGranularity
 from whylogs.api.logger.experimental.multi_dataset_logger.multi_dataset_rolling_logger import MultiDatasetRollingLogger
-from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity
 from whylogs.api.logger.experimental.multi_dataset_logger.time_util import Schedule
+from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity
+from whylogs.api.writer import Writers
 
+from ...util.string_util import encode_strings
+from ..container.config import ContainerConfig, get_dataset_options
+from .actor import Actor, CloseMessage
 from .profile_actor_messages import (
     DebugMessage,
-    PublishMessage,
-    RawLogMessage,
-    RawLogEmbeddingsMessage,
     LogEmbeddingRequestDict,
     LogRequestDict,
+    PublishMessage,
+    RawLogEmbeddingsMessage,
+    RawLogMessage,
+    determine_dataset_timestamp,
+    get_columns,
+    get_embeddings_columns,
+    log_dict_to_data_frame,
+    log_dict_to_embedding_matrix,
+    reduce_embeddings_request,
+    reduce_log_requests,
 )
-from .actor import Actor, CloseMessage
 
 MessageType = Union[DebugMessage, PublishMessage, RawLogMessage, RawLogEmbeddingsMessage]
 
@@ -112,21 +116,23 @@ class ProfileActor(Actor[MessageType]):
             options = get_dataset_options(dataset_id)
             cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence
 
-            for dataset_timestamp, sub_group in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
-                self._logger.info(f"Logging embeddings for ts {dataset_timestamp} in dataset {dataset_id}")
-                giga_message: LogEmbeddingRequestDict = reduce(_reduce_embedding_dicts, sub_group)
-                row = log_dict_to_embedding_matrix(giga_message)
+            for dataset_timestamp, ts_grouped in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
+                for n, sub_group in groupby(ts_grouped, lambda it: encode_strings(get_embeddings_columns(it))):
+                    self._logger.info(
+                        f"Logging embeddings for ts {dataset_timestamp} in dataset {dataset_id} for column set {n}"
+                    )
+                    giga_message: LogEmbeddingRequestDict = reduce(reduce_embeddings_request, sub_group)
+                    row = log_dict_to_embedding_matrix(giga_message)
 
-                row_count = 0
-                for embeddings in row.values():
-                    row_count += len(embeddings)
+                    row_count = 0
+                    for embeddings in row.values():
+                        row_count += len(embeddings)
 
-                start = time.perf_counter()
-                self._logger.warning(row)
-                logger.log(row, timestamp_ms=dataset_timestamp, sync=True)
-                self._logger.debug(
-                    f'Took {time.perf_counter() - start}s to log {row_count} rows for {len(giga_message["embeddings"])} columns'
-                )
+                    start = time.perf_counter()
+                    logger.log(row, timestamp_ms=dataset_timestamp, sync=True)
+                    self._logger.debug(
+                        f'Took {time.perf_counter() - start}s to log {row_count} rows for {len(giga_message["embeddings"])} columns'
+                    )
 
     def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
         self._logger.info("Processing log request message")
@@ -137,13 +143,16 @@ class ProfileActor(Actor[MessageType]):
             options = get_dataset_options(dataset_id)
             cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence
 
-            for dataset_timestamp, sub_group in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
-                self._logger.info(f"Logging data for ts {dataset_timestamp} in dataset {dataset_id}")
-                giga_message: LogRequestDict = reduce(_reduce_dicts, sub_group)
-                df = log_dict_to_data_frame(giga_message)
-                start = time.perf_counter()
-                logger.log(df, timestamp_ms=dataset_timestamp, sync=True)
-                self._logger.debug(f"Took {time.perf_counter() - start}s to log {len(df.index)}")
+            for dataset_timestamp, ts_grouped in groupby(group, lambda it: determine_dataset_timestamp(cadence, it)):
+                for n, sub_group in groupby(ts_grouped, lambda it: encode_strings(get_columns(it))):
+                    self._logger.info(
+                        f"Logging data for ts {dataset_timestamp} in dataset {dataset_id} for column set {n}"
+                    )
+                    giga_message: LogRequestDict = reduce(reduce_log_requests, sub_group)
+                    df = log_dict_to_data_frame(giga_message)
+                    start = time.perf_counter()
+                    logger.log(df, timestamp_ms=dataset_timestamp, sync=True)
+                    self._logger.debug(f"Took {time.perf_counter() - start}s to log {len(df.index)}")
 
     def process_debug_message(self, messages: List[DebugMessage]) -> None:
         for dataset_id, logger in self.loggers.items():
@@ -160,55 +169,3 @@ class ProfileActor(Actor[MessageType]):
         for dataset_id, logger in self.loggers.items():
             self._logger.info(f"Force rolling dataset {dataset_id}")
             logger.flush()
-
-
-def log_request_to_data_frame(request: LogRequest) -> pd.DataFrame:
-    if request.single:
-        return pd.DataFrame.from_dict(request.single)
-    elif request.multiple:
-        return pd.DataFrame(request.multiple.data, columns=request.multiple.columns)
-
-
-def log_dict_to_data_frame(request: LogRequestDict) -> pd.DataFrame:
-    if "single" in request and request["single"] is not None:
-        return pd.DataFrame.from_dict(request["single"])
-    elif "multiple" in request and request["multiple"] is not None:
-        return pd.DataFrame(request["multiple"]["data"], columns=request["multiple"]["columns"])
-    else:
-        raise Exception(f"Request missing both the single and multiple fields {request}")
-
-
-def log_dict_to_embedding_matrix(request: LogEmbeddingRequestDict) -> Dict[str, np.ndarray]:
-    row: Dict[str, np.ndarray] = {}
-    for col, embeddings in request["embeddings"].items():
-        row[col] = np.array(embeddings)
-    return row
-
-
-# TODO this isn't technically correct all the time. It depends on the columns being the same. The "correct" way
-# would be to further group by column configuration but that would be a lot more work. Need to figure out a nice way to fix.
-def _reduce_dicts(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestDict:
-    if not acc["multiple"]:
-        raise Exception("no")
-    if not cur["multiple"]:
-        raise Exception("no")
-
-    acc["multiple"]["data"].extend(cur["multiple"]["data"])
-    return acc
-
-
-def _reduce_embedding_dicts(acc: LogEmbeddingRequestDict, cur: LogEmbeddingRequestDict) -> LogEmbeddingRequestDict:
-    for col, embeddings in cur["embeddings"].items():
-        if col not in acc["embeddings"]:
-            acc["embeddings"][col] = []
-
-        acc["embeddings"][col].extend(embeddings)
-
-    return acc
-
-
-def determine_dataset_timestamp(
-    cadence: DatasetCadence, request: Union[LogRequestDict, LogEmbeddingRequestDict]
-) -> int:
-    ts = request["timestamp"]
-    return truncate_time_ms(ts, TimeGranularity.D if cadence == DatasetCadence.DAILY else TimeGranularity.H)

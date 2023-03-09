@@ -53,19 +53,17 @@ class Actor(Process, ABC, Generic[MessageType]):
             self._logger.info("Stopping poll. Handled all messages and shutting down.")
             return False
 
-        if batch_len > max:
-            self._logger.info(f"Stopping poll. Got {max} messages.")
+        if batch_len >= max:
+            self._logger.info(f"Stopping poll. Got {batch_len} messages.")
             return False
 
         if time.perf_counter() - last_message_time > 0.5:
-            # self._logger.debug("Stopping poll. Went max time without seeing new messages.")
             return False
 
-        # self._logger.debug(f'Continuing poll. Have {batch_len} messages and {remaining} left.')
         return True
 
     def _load_messages(self) -> Optional[List[MessageType]]:
-        max = 10000
+        max = 50_000  # TODO make configurable
         batch: List[MessageType] = []
         last_message_time = time.perf_counter()
 
@@ -95,7 +93,11 @@ class Actor(Process, ABC, Generic[MessageType]):
                 self._logger.info(
                     f"Processing batch of {len(batch)} {batch_type.__name__}. {self.queue.qsize()} remaining"
                 )
-                self.process_batch(batch, batch_type)
+
+                try:
+                    self.process_batch(batch, batch_type)
+                except Exception as e:
+                    self._logger.exception(e)
 
         # Can only get here if we're done processing messages
         self._work_done_signal.set()
@@ -105,8 +107,9 @@ class Actor(Process, ABC, Generic[MessageType]):
             with suspended_signals(signal.SIGINT, signal.SIGTERM):
                 self.process_messages()
         except KeyboardInterrupt:
+            # Swallow this to prevent annoying stack traces in dev.
             pass
-        except BaseException as e:
+        except Exception as e:
             self._logger.exception(e)
 
     async def shutdown(self) -> None:
