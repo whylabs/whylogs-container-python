@@ -16,12 +16,18 @@ class EnvVarNames(Enum):
     DEFAULT_WHYLABS_UPLOAD_CADENCE = "DEFAULT_WHYLABS_UPLOAD_CADENCE"
     DEFAULT_WHYLABS_UPLOAD_INTERVAL = "DEFAULT_WHYLABS_UPLOAD_INTERVAL"
 
+    CONTAINER_PASSWORD = "CONTAINER_PASSWORD"
+    DISABLE_CONTAINER_PASSWORD = "DISABLE_CONTAINER_PASSWORD"
+
     FAIL_STARTUP_WITHOUT_CONFIG = "FAIL_STARTUP_WITHOUT_CONFIG"
 
 
 class ContainerConfig:
     whylabs_api_key: str
     whylabs_org_id: str
+
+    disable_container_password: bool
+    container_password: Optional[str]
 
     default_dataset_cadence: DatasetCadence
     default_whylabs_upload_cadence: DatasetUploadCadenceGranularity
@@ -32,6 +38,13 @@ class ContainerConfig:
     def __init__(self) -> None:
         self.whylabs_api_key = self._require_env(EnvVarNames.WHYLABS_API_KEY)
         self.whylabs_org_id = self._require_env(EnvVarNames.WHYLABS_ORG_ID)
+
+        self.disable_container_password = self._read_env_bool(EnvVarNames.DISABLE_CONTAINER_PASSWORD) or False
+
+        if not self.disable_container_password:
+            self.container_password = self._require_env(EnvVarNames.CONTAINER_PASSWORD)
+        else:
+            self.container_password = None
 
         self.fail_startup_without_config = self._read_env(EnvVarNames.FAIL_STARTUP_WITHOUT_CONFIG) == "True"
 
@@ -52,6 +65,9 @@ class ContainerConfig:
             default_whylabs_upload_interval and int(default_whylabs_upload_interval) or 1
         )
 
+    def auth_disabled(self) -> bool:
+        return self.disable_container_password
+
     def _require_env(self, var: EnvVarNames) -> str:
         try:
             return os.environ[var.name]
@@ -62,6 +78,16 @@ class ContainerConfig:
     def _read_env(self, var: EnvVarNames) -> Optional[str]:
         try:
             return os.environ[var.name]
+        except KeyError:
+            return None
+
+    def _read_env_bool(self, var: EnvVarNames) -> Optional[bool]:
+        try:
+            value = os.environ[var.name]
+            if value:
+                return True
+            else:
+                return False
         except KeyError:
             return None
 

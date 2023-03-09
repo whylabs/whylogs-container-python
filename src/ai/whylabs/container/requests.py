@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -13,5 +13,4 @@ class LogMultiple(BaseModel):
 class LogRequest(BaseModel):
     dataset_id: str = Field(None, alias="datasetId")
     timestamp: Optional[int]
-    single: Optional[Dict[str, DataTypes]]
-    multiple: Optional[LogMultiple]
+    data: LogMultiple
