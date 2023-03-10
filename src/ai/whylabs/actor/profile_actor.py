@@ -9,7 +9,7 @@ from whylabs_toolkit.container.config_types import DatasetCadence, DatasetUpload
 from whylogs.api.logger.experimental.multi_dataset_logger.multi_dataset_rolling_logger import MultiDatasetRollingLogger
 from whylogs.api.logger.experimental.multi_dataset_logger.time_util import Schedule
 from whylogs.api.logger.experimental.multi_dataset_logger.time_util import TimeGranularity as yTimeGranularity
-from whylogs.api.writer import Writers
+from whylogs.api.writer import Writers, Writer
 
 from ...util.string_util import encode_strings
 from ..container.config import ContainerConfig, get_dataset_options
@@ -21,6 +21,8 @@ from .profile_actor_messages import (
     PublishMessage,
     RawLogEmbeddingsMessage,
     RawLogMessage,
+    PubSubMessage,
+    RawPubSubMessage,
     determine_dataset_timestamp,
     get_columns,
     get_embeddings_columns,
@@ -30,16 +32,17 @@ from .profile_actor_messages import (
     reduce_log_requests,
 )
 
-MessageType = Union[DebugMessage, PublishMessage, RawLogMessage, RawLogEmbeddingsMessage]
+MessageType = Union[DebugMessage, PublishMessage, RawLogMessage, RawLogEmbeddingsMessage, RawPubSubMessage]
 
 
 class ProfileActor(Actor[MessageType]):
-    def __init__(self, queue: Queue, env_vars: ContainerConfig = ContainerConfig()) -> None:
+    def __init__(self, queue: Queue, env_vars: ContainerConfig = ContainerConfig(), writers: List[Writer] = []) -> None:
         super().__init__(queue)
         # NOTE, this is created before the process forks. You can't access this from the original process via
         # a method. You need some sort of IPC signal.
         self.loggers: Dict[str, MultiDatasetRollingLogger] = {}
         self.env_vars = env_vars
+        self._writers = writers
 
     def _create_logger(self, dataset_id: str) -> MultiDatasetRollingLogger:
         options = get_dataset_options(dataset_id)
@@ -66,12 +69,18 @@ class ProfileActor(Actor[MessageType]):
         elif upload_cadence == DatasetUploadCadenceGranularity.MINUTE:
             schedule = Schedule(cadence=yTimeGranularity.Minute, interval=upload_interval)
 
-        whylabs_writer = Writers.get(
-            "whylabs", org_id=self.env_vars.whylabs_org_id, api_key=self.env_vars.whylabs_api_key, dataset_id=dataset_id
-        )
+        self._writers = self._writers or [
+            Writers.get(
+                "whylabs",
+                org_id=self.env_vars.whylabs_org_id,
+                api_key=self.env_vars.whylabs_api_key,
+                dataset_id=dataset_id,
+            )
+        ]
+
         logger = MultiDatasetRollingLogger(
             aggregate_by=aggregate_by,
-            writers=[whylabs_writer],
+            writers=self._writers,
             schema=options and options.schema,
             write_schedule=schedule,
         )
@@ -92,9 +101,11 @@ class ProfileActor(Actor[MessageType]):
         elif batch_type == PublishMessage:
             self.process_publish_message(cast(List[PublishMessage], batch))
         elif batch_type == RawLogMessage:
-            self.process_log_dicts(cast(List[RawLogMessage], batch))
+            self.process_raw_log_dicts(cast(List[RawLogMessage], batch))
         elif batch_type == RawLogEmbeddingsMessage:
             self.process_log_embeddings_dicts(cast(List[RawLogEmbeddingsMessage], batch))
+        elif batch_type == RawPubSubMessage:
+            self.process_pubsub(cast(List[RawPubSubMessage], batch))
         elif batch_type == CloseMessage:
             self.process_close_message(cast(List[CloseMessage], batch))
         else:
@@ -106,6 +117,16 @@ class ProfileActor(Actor[MessageType]):
         for datasetId, logger in self.loggers.items():
             self._logger.info(f"Closing whylogs logger for {datasetId}")
             logger.close()
+
+    def process_pubsub(self, messages: List[RawPubSubMessage]) -> None:
+        self._logger.info("Processing pubsub message")
+        pubsub = [it.to_pubsub_message()["log_request"] for it in messages]
+        self.process_log_dicts(pubsub)
+
+    def process_raw_log_dicts(self, messages: List[RawLogMessage]) -> None:
+        self._logger.info("Processing raw log request message")
+        log_dicts = [m.to_log_request_dict() for m in messages]
+        self.process_log_dicts(log_dicts)
 
     def process_log_embeddings_dicts(self, messages: List[RawLogEmbeddingsMessage]) -> None:
         self._logger.info("Processing log embeddings request message")
@@ -134,11 +155,8 @@ class ProfileActor(Actor[MessageType]):
                         f'Took {time.perf_counter() - start}s to log {row_count} rows for {len(giga_message["embeddings"])} columns'
                     )
 
-    def process_log_dicts(self, messages: List[RawLogMessage]) -> None:
-        self._logger.info("Processing log request message")
-        log_dicts = [m.to_log_request_dict() for m in messages]
-
-        for dataset_id, group in groupby(log_dicts, lambda it: it["datasetId"]):
+    def process_log_dicts(self, messages: List[LogRequestDict]) -> None:
+        for dataset_id, group in groupby(messages, lambda it: it["datasetId"]):
             logger = self._get_logger(dataset_id)
             options = get_dataset_options(dataset_id)
             cadence = (options and options.dataset_cadence) or self.env_vars.default_dataset_cadence

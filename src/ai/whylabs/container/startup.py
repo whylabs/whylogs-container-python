@@ -1,6 +1,7 @@
 import uvicorn
 from uvicorn.logging import DefaultFormatter
 import logging
+from ..actor.actor import start_actor
 
 # Make sure logger initialization is the first thing that happens
 def init_logging() -> None:
@@ -24,7 +25,7 @@ from .routes import actor
 
 
 def update_pid(act: Actor) -> None:
-    logger.info(f"Profiling process pid {actor.pid}")
+    logger.info(f"Profiler process pid: {actor.pid}")
     with open("/tmp/profiling_pid", "w") as f:
         f.write(str(act.pid))
 
@@ -32,9 +33,7 @@ def update_pid(act: Actor) -> None:
 if __name__ == "__main__":
     logger = logging.getLogger("startup")
 
-    actor.daemon = True
-    actor.start()
-    actor.join(0.1)
+    start_actor(actor)
     update_pid(actor)
 
     config = uvicorn.Config(

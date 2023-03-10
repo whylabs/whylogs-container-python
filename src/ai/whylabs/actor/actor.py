@@ -10,7 +10,7 @@ from typing import TypeVar, Generic, List, Type, Union
 from queue import Full
 from multiprocessing import Process, Event
 from queue import Empty, Full
-from ...util.list_util import get_like_items, type_batched_items
+from ...util.list_util import type_batched_items
 
 MessageType = TypeVar("MessageType")
 
@@ -28,7 +28,7 @@ class Actor(Process, ABC, Generic[MessageType]):
         self._work_done_signal = Event()
         super().__init__()
 
-    async def send(self, message: Union[CloseMessage, MessageType]) -> None:
+    def send(self, message: Union[CloseMessage, MessageType]) -> None:
         if self.queue.is_closed():
             self._logger.warn(f"Dropping message because queue is closed.")
             return
@@ -111,13 +111,22 @@ class Actor(Process, ABC, Generic[MessageType]):
             pass
         except Exception as e:
             self._logger.exception(e)
+        finally:
+            self._logger.info("Process shutting down.")
+            os._exit(0)  # Not sure why I need this but I definitely do
 
-    async def shutdown(self) -> None:
+    def shutdown(self) -> None:
+        if self.pid is None:
+            raise Exception("Process hasn't been started yet.")
         self._logger.info("Sending Close message to work queue.")
-        await self.send(CloseMessage())
+        self.send(CloseMessage())
         self._logger.info(
             f"Process will shutdown after all pending {self.queue.qsize()} data has been processed and uploaded."
         )
         self._work_done_signal.wait()
-        self._logger.info("Process shutting down.")
-        os._exit(0)  # Not sure why I need this but I definitely do
+
+
+def start_actor(actor: Actor) -> None:
+    actor.daemon = True
+    actor.start()
+    actor.join(0.1)

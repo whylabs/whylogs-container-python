@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import base64
 from typing import Dict, List, TypedDict, Union
 
 import numpy as np
@@ -18,13 +19,26 @@ class DataDict(TypedDict):
 class LogRequestDict(TypedDict):
     datasetId: str
     timestamp: int
-    data: DataDict
+    multiple: DataDict
 
 
 class LogEmbeddingRequestDict(TypedDict):
     datasetId: str
     timestamp: int
     embeddings: Dict[str, List[DataTypes]]
+
+
+class PubSubMessage(TypedDict):
+    attributes: Dict[str, str]
+    data: str
+    message_id: str
+    publish_time: str  # TODO need a sample of the format
+
+
+class PubSubDict(TypedDict):
+    subscription: str
+    message: PubSubMessage
+    log_request: LogRequestDict
 
 
 class DebugMessage:
@@ -48,15 +62,15 @@ class RawLogMessage:
         if "datasetId" not in d or d["datasetId"] is None:
             raise Exception(f"Request missing dataset id {d}")
 
-        if "data" not in d or d["data"] is None:
+        if "multiple" not in d or d["multiple"] is None:
             raise Exception(f"Request has no data field {d}")
 
         return d
 
 
 def get_columns(request: LogRequestDict) -> List[str]:
-    if "data" in request and request["data"] is not None:
-        return request["data"]["columns"]
+    if "multiple" in request and request["multiple"] is not None:
+        return request["multiple"]["columns"]
 
     raise Exception(f"Missing both single and data fields in request {request}.")
 
@@ -67,6 +81,29 @@ def get_embeddings_columns(request: LogEmbeddingRequestDict) -> List[str]:
         return list(embeddings.keys())
 
     raise Exception(f"Missing embeddings fields in request {request}.")
+
+
+@dataclass
+class RawPubSubMessage:
+    request: bytes
+    request_time: int
+
+    # TODO unit tests
+    def to_pubsub_message(self) -> PubSubDict:
+        d: PubSubDict = orjson.loads(self.request)
+
+        if "message" not in d or d["message"] is None:
+            raise Exception(f"Request missing message field {d}")
+
+        message = d["message"]
+        encoded_data = message["data"]
+        log_request_dict_bytes = base64.b64decode(encoded_data)
+
+        # TODO verify desired behavior here. We could use the time inside of the pubsub message as well.
+        log_message = RawLogMessage(request=log_request_dict_bytes, request_time=self.request_time)
+        log_request = log_message.to_log_request_dict()
+        d["log_request"] = log_request
+        return d
 
 
 @dataclass
@@ -95,7 +132,7 @@ class RawLogEmbeddingsMessage:
 
 
 def log_dict_to_data_frame(request: LogRequestDict) -> pd.DataFrame:
-    return pd.DataFrame(request["data"]["data"], columns=request["data"]["columns"])
+    return pd.DataFrame(request["multiple"]["data"], columns=request["multiple"]["columns"])
 
 
 def log_dict_to_embedding_matrix(request: LogEmbeddingRequestDict) -> Dict[str, np.ndarray]:
@@ -110,7 +147,7 @@ def reduce_log_requests(acc: LogRequestDict, cur: LogRequestDict) -> LogRequestD
     Reduce requests, assuming that each request has the same columns.
     That assumption should be enforced before this is used by grouping by set of columns.
     """
-    acc["data"]["data"].extend(cur["data"]["data"])
+    acc["multiple"]["data"].extend(cur["multiple"]["data"])
     return acc
 
 
@@ -128,4 +165,5 @@ def determine_dataset_timestamp(
     cadence: DatasetCadence, request: Union[LogRequestDict, LogEmbeddingRequestDict]
 ) -> int:
     ts = request["timestamp"]
-    return truncate_time_ms(ts, TimeGranularity.D if cadence == DatasetCadence.DAILY else TimeGranularity.H)
+    truncate_cadence = TimeGranularity.D if cadence == DatasetCadence.DAILY else TimeGranularity.H
+    return truncate_time_ms(ts, truncate_cadence)

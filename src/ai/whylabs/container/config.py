@@ -93,7 +93,6 @@ class ContainerConfig:
 
 
 def _load_custom_options() -> Optional[Dict[str, DatasetOptions]]:
-    config = ContainerConfig()
     try:
         # This may or may not exist depending on if the use supplies custom configuration and
         # builds it into a downstream docker image
@@ -103,6 +102,7 @@ def _load_custom_options() -> Optional[Dict[str, DatasetOptions]]:
         _logger.info(f"Found custom whylogs configuration {s}")
         return s
     except (ImportError, ModuleNotFoundError) as e:
+        config = ContainerConfig()
         _logger.warning("No custom whylogs configuration found.")
         if config.fail_startup_without_config:
             _logger.exception(

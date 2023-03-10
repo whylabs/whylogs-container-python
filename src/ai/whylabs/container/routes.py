@@ -23,13 +23,19 @@ auth_dependencies = [Depends(auth.api_key_auth)] if not config.auth_disabled() e
 @app.post("/log", dependencies=auth_dependencies)
 async def log(_raw_request: Request) -> None:
     b: bytes = await _raw_request.body()
-    await actor.send(RawLogMessage(request=b, request_time=current_time_ms()))
+    actor.send(RawLogMessage(request=b, request_time=current_time_ms()))
 
 
 @app.post("/log-embeddings", dependencies=auth_dependencies)
 async def log_embeddings(_raw_request: Request) -> None:
     b: bytes = await _raw_request.body()
-    await actor.send(RawLogEmbeddingsMessage(request=b, request_time=current_time_ms()))
+    actor.send(RawLogEmbeddingsMessage(request=b, request_time=current_time_ms()))
+
+
+@app.post("/log-pubsub", dependencies=auth_dependencies)
+async def log_pubsub(_raw_request: Request) -> None:
+    b: bytes = await _raw_request.body()
+    actor.send(RawLogEmbeddingsMessage(request=b, request_time=current_time_ms()))
 
 
 @app.post("/log_docs", dependencies=auth_dependencies)
@@ -45,7 +51,7 @@ async def log_docs(body: LogRequest, _raw_request: Request) -> None:
 
 @app.post("/publish", dependencies=auth_dependencies)
 async def publish_profiles() -> None:
-    await actor.send(PublishMessage())
+    actor.send(PublishMessage())
 
 
 @app.post("/health", dependencies=auth_dependencies)
@@ -57,10 +63,10 @@ async def health() -> None:
 
 @app.post("/logDebugInfo", dependencies=auth_dependencies)
 async def log_debug_info() -> None:
-    await actor.send(DebugMessage())
+    actor.send(DebugMessage())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
     logger.info("Shutting down web server")
-    await actor.shutdown()
+    actor.shutdown()
