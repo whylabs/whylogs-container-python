@@ -1,0 +1,10 @@
+version: '3'
+services:
+  llm_container:
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    ports:
+      - "8000:8000"
+    env_file:
+      - "local.env"

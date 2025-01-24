@@ -1,0 +1,9 @@
+{
+  "commands": [
+    {
+      "protocol": "http",
+      "method": "GET",
+      "resource": "/health"
+    }
+  ]
+}

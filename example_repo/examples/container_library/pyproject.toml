@@ -1,0 +1,61 @@
+[tool.poetry]
+name = "demo"
+version = "0.1.0"
+description = ""
+authors = ["Anthony Naddeo <anthony@whylabs.ai>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+whylogs = "^1.4.4"
+
+whylogs-container = {version = "2.0.1", extras = ["llm"], source = "whylabs_container_gitlab"}
+torch = { version = "2.2.1+cpu" }
+
+[tool.poetry.group.dev.dependencies]
+pyright = "^1.1.367"
+ruff = "0.6.2"
+whylogs-container-client = "2.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "torch"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "supplemental" # The container uses the cpu build of torch by default and this is where it is hosted
+
+[[tool.poetry.source]]
+name = "whylabs_container_gitlab"
+url = "https://gitlab.com/api/v4/projects/55361491/packages/pypi/simple"
+priority = "supplemental"
+
+[tool.pyright]
+include = ["./demo/**/*.py", "./test/**/*.py"]
+typeCheckingMode = "strict"
+
+reportMissingTypeStubs = false
+reportMissingParameterType = false
+reportMissingTypeArgumet = false
+
+[tool.ruff]
+line-length = 140
+indent-width = 4
+include = ["./demo/**/*.py", "./test/**/*.py"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["whylogs"]
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+

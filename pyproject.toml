@@ -1,0 +1,113 @@
+[tool.poetry]
+name = "whylogs-container"
+version = "3.0.0" # bump2version
+description = ""
+authors = [
+    "Murilo Mendonça <murilo@whylabs.ai>",
+    "Anthony Naddeo <anthony@whylabs.ai>",
+]
+license = "Apache-2.0 license"
+readme = "README.md"
+packages = [
+    { include = "whylogs_container/**/*.py" },
+    { include = "whylogs_container_types/**/*.py" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.9, <3.12"
+fastapi = {extras = ["all"], version = "^0.115.2"}
+pandas = "^2.2.1"
+requests = "^2.31.0"
+orjson = "^3.10.3"
+whylogs = {version = "1.6.3-dev3", extras = ["embeddings", "proc"]}
+uvicorn = {extras = ["standard"], version = "^0.24.0.post1"}
+boto3 = "^1.34.101"
+whylabs-client = "0.6.15-dev0"
+faster-fifo = "^1.4.7"
+
+opentelemetry-api = "^1.21.0"
+opentelemetry-sdk = "^1.21.0"
+opentelemetry-exporter-otlp-proto-http = "^1.22.0"
+opentelemetry-instrumentation-fastapi = "^0.45b0"
+tenacity = "^8.2.3"
+
+# pydantic dependencies are pinned because updating them can change the generated python client code
+pydantic = "2.9.2"
+pydantic-settings = "2.5.2"
+
+# LLM Dependencies
+whylabs-llm-toolkit = {version = "0.1.37", extras = ["infer"], optional=true}
+torch = { version = "2.2.1", source = "torch", optional=true }
+torchvision = { version = "0.17.1", source = "torch", optional=true }
+
+# This is pinned because of poetry-plugin-export. We don't care about the version for the application.
+urllib3 = "1.26.19"
+click = "^8.1.7"
+
+# Security fixes for transitive dependencies
+setuptools = "^75.1.0"
+semver = "^3.0.2"
+python-multipart = "^0.0.18"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.0"
+types-python-dateutil = "^2.8.19.8"
+sphinx = "7.4.7"
+furo = "^2023.8.19"
+debugpy = "^1.8.0"
+pyright = "1.1.383"
+ruff = "^0.6.2"
+openapi-python-client = "0.21.3"
+poetry-plugin-export = "^1.6.0"
+bump2version = "^1.0.1"
+whylogs_container_client = "2.0.0-dev0"
+moto = {extras = ["s3"], version = "^5.0.1"}
+boto3-stubs = {extras = ["s3"], version = "^1.34.36"}
+packaging = "^24.0"
+
+
+[[tool.poetry.source]]
+name = "torch"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[tool.poetry.extras]
+llm = ["whylabs-llm-toolkit", "torch"]
+policy = ["whylabs-llm-toolkit"]
+
+[tool.pytest.ini_options]
+log_cli = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+include = ["whylogs_container", "whylogs_container_types", "integ", "tests", "scripts", "policy_validator"]
+typeCheckingMode = "strict"
+
+reportMissingTypeStubs = false
+reportMissingParameterType = false
+reportMissingTypeArgumet = false
+reportUnnecessaryTypeIgnoreComment = true
+
+
+[tool.ruff]
+line-length = 140
+indent-width = 4
+include = ["./whylogs_container/**/*.py", "./whylogs_container_types/**/*.py", "./tests/**/*.py", "./integ/**/*.py", "./scripts/**/*.py", "./policy_validator/**/*.py"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["whylogs", "langkit"]
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+

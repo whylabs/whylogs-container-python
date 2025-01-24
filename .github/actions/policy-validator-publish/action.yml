@@ -1,0 +1,52 @@
+name: "Policy validator publish steps"
+inputs:
+  username:
+    description: "gitlab container registry username"
+    required: true
+  password:
+    description: "gitlab container registry password"
+    required: true
+  version:
+    description: "current whylogs container version"
+    required: true
+  publish_latest:
+    default: "true"
+    description: "double publish as the latest tag"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Env variables
+      shell: bash
+      run: |
+        echo "DOCKER_OUTPUT=./container/" >> $GITHUB_ENV
+        echo "IMAGE_TAR=./container/policy-validator.tar" >> $GITHUB_ENV
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+      with:
+        registry: registry.gitlab.com
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: Download container artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: policy-validator
+        path: ${{ env.DOCKER_OUTPUT }}
+
+    - name: Load Docker image
+      shell: bash
+      run: |
+        docker load --input ${{ env.IMAGE_TAR }}
+        docker tag registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }} registry.gitlab.com/whylabs/policy-validator:latest
+        docker image ls -a
+
+    - name: Push Docker container
+      shell: bash
+      run: |
+        docker push registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }}
+        if [[ "${{ inputs.publish_latest }}" == "true" ]]; then
+          docker push registry.gitlab.com/whylabs/policy-validator:latest
+        fi

@@ -1,0 +1,15 @@
+modules.json
+vocab.txt
+sentence_bert_config.json
+special_tokens_map.json
+tokenizer_config.json
+config.json
+model.safetensors
+README.md
+tokenizer.json
+classifier_hyper_params.json
+model_head.pkl
+config_setfit.json
+config_sentence_transformers.json
+1_Pooling/config.json
+metadata.json

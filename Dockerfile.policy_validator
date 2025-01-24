@@ -1,0 +1,62 @@
+##
+## SETUP
+## Base image that updates package and sets up the user
+##
+FROM python:3.10.13-slim as base
+RUN apt-get update && apt-get upgrade -y
+RUN groupadd -r whylabs && useradd --no-log-init -m -u 1000 -g whylabs whylabs 
+WORKDIR /opt/policy-validator
+RUN chown -R whylabs:whylabs /opt/policy-validator
+
+# Update setuptools for security fixes
+RUN pip install --no-cache-dir --upgrade pip setuptools
+RUN pip cache purge
+
+USER whylabs
+
+##
+## PYTHON DEPENDENCIES
+## Install/build pip dependencies
+##
+FROM base as python_dependencies
+USER root
+RUN apt-get install --no-install-recommends -y curl build-essential
+USER whylabs
+# Install poetry
+ENV PATH="/home/whylabs/.local/bin:${PATH}"
+RUN python3.10 -m pip install --user pipx
+RUN python3.10 -m pipx ensurepath
+RUN python3.10 -m pipx install poetry==1.7.1
+
+COPY poetry.lock /opt/policy-validator/
+COPY pyproject.toml /opt/policy-validator/
+
+RUN poetry config virtualenvs.in-project true
+
+RUN --mount=type=secret,id=pypi_api_key,uid=1000 \
+    poetry config virtualenvs.in-project true  && \
+    POETRY_HTTP_BASIC_WHYLABS_CONTAINER_GITLAB_USERNAME=__token__ \
+    POETRY_HTTP_BASIC_WHYLABS_CONTAINER_GITLAB_PASSWORD=$(cat /run/secrets/pypi_api_key) \
+    poetry install --no-root --extras "policy" --without dev
+
+RUN rm -rf .venv/lib/python3.10/site-packages/pandas/tests
+
+
+##
+## MAIN
+## Copy required files from previous steps and copy whylogs_container over
+##
+FROM base
+
+WORKDIR /opt/policy-validator
+COPY --from=python_dependencies /opt/policy-validator /opt/policy-validator
+COPY ./whylogs_container/ ./whylogs_container/
+COPY whylogs_container_types/ ./whylogs_container_types/
+COPY ./policy_validator/ ./policy_validator/
+
+# https://docs.python.org/3/using/cmdline.html#envvar-PYTHONDONTWRITEBYTECODE
+# Prevents Python from writing .pyc files to disk
+ENV PYTHONDONTWRITEBYTECODE 1
+
+EXPOSE 8000
+ENTRYPOINT [ "/bin/bash", "-c", "source .venv/bin/activate; python -m policy_validator.startup" ]

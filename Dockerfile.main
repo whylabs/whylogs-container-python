@@ -1,0 +1,56 @@
+##
+## SETUP
+## Base image that updates package and sets up the user
+##
+FROM python:3.10.13-slim as base
+RUN apt-get update && apt-get upgrade -y
+RUN groupadd -r whylabs && useradd --no-log-init -m -u 1000 -g whylabs whylabs 
+WORKDIR /opt/whylogs-container
+RUN chown -R whylabs:whylabs /opt/whylogs-container
+
+# Update setuptools for security fixes
+RUN pip install --no-cache-dir --upgrade pip setuptools
+RUN pip cache purge
+
+USER whylabs
+
+##
+## PYTHON DEPENDENCIES
+## Install/build pip dependencies
+##
+FROM base as python_dependencies
+USER root
+RUN apt-get install --no-install-recommends -y curl build-essential
+USER whylabs
+# Install poetry
+ENV PATH="/home/whylabs/.local/bin:${PATH}"
+RUN python3.10 -m pip install --user pipx
+RUN python3.10 -m pipx ensurepath
+RUN python3.10 -m pipx install poetry==1.7.1
+
+COPY poetry.lock /opt/whylogs-container/
+COPY pyproject.toml /opt/whylogs-container/
+
+RUN poetry config virtualenvs.in-project true
+RUN poetry install --no-root --without dev
+RUN rm -rf .venv/lib/python3.10/site-packages/pandas/tests
+RUN poetry run pip uninstall pyphen
+
+
+##
+## MAIN
+## Copy required files from previous steps and copy whylogs_container over
+##
+FROM base
+
+WORKDIR /opt/whylogs-container
+COPY --from=python_dependencies /opt/whylogs-container /opt/whylogs-container
+COPY ./whylogs_container/ ./whylogs_container/
+COPY whylogs_container_types/ ./whylogs_container_types/
+
+# https://docs.python.org/3/using/cmdline.html#envvar-PYTHONDONTWRITEBYTECODE
+# Prevents Python from writing .pyc files to disk
+ENV PYTHONDONTWRITEBYTECODE 1
+
+EXPOSE 8000
+ENTRYPOINT [ "/bin/bash", "-c", "source .venv/bin/activate; python -m whylogs_container.whylabs.container.startup" ]

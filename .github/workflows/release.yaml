@@ -1,0 +1,458 @@
+name: Release CI
+
+on:
+  push:
+    branches: ["release", "dev-release"]
+
+env:
+  VERSION: 3.0.0
+  DOC_DIR: docs/_build/html
+
+jobs:
+  simple-checks:
+    name: Release checks
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: "3.10.8"
+
+      - uses: Gr1N/setup-poetry@v8
+        name: Install poetry
+        with:
+          poetry-version: 1.7.1
+
+      - name: enforce version name
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/dev-release" ]]; then
+            if [[ "${VERSION}" != *dev* ]]; then
+              echo "Version string must contain 'dev' for dev-release branch. You probably mistakenly ran 'make bump-release' which gets rid of the dev semver section."
+              exit 1
+            fi
+          fi
+
+      - name: Setup gitlab pypi auth
+        shell: bash
+        run: poetry config http-basic.whylabs_container_gitlab __token__ ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      - name: Install python dependencies
+        shell: bash
+        run: make install
+
+      - name: Check release notes exist for current version
+        if: github.ref == 'refs/heads/release'
+        id: ensure_release_notes
+        run: cat ./release_notes/${{ env.VERSION }}.md
+
+      - name: Check that we don't have release notes for future versions
+        id: ensure_release_notes_future
+        run: poetry run python ./scripts/detect_version_bump_missing.py ${{ env.VERSION }}
+
+  build-policy-validator:
+    name: Build policy validator
+    needs: simple-checks
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Policy validator build
+        uses: ./.github/actions/policy-validator-build
+        with:
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+          version: ${{ env.VERSION }}
+
+  build-docker-main:
+    name: Build the main docker image
+    needs: simple-checks
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Common Docker Build Steps
+        uses: ./.github/actions/docker-build
+        with:
+          langkit_whylabs_api_key: ${{ secrets.LANGKIT_WHYLABS_API_KEY }}
+          type: main
+          version: ${{ env.VERSION }}
+          upload_artifact: true
+
+  build-docker-llm:
+    name: Build the llm docker image
+    needs: simple-checks
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        llm_default_encoder:
+          - "AllMiniLML6V2"
+          - "ParaphraseMultilingualMiniLML12V2"
+          - "BGESmallEn_V1_5"
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # if set to "true" but frees about 6 GB
+          tool-cache: false
+
+          # all of these default to true, but feel free to set to
+          # "false" if necessary for your workflow
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Common Docker Build Steps
+        uses: ./.github/actions/docker-build
+        with:
+          langkit_whylabs_api_key: ${{ secrets.LANGKIT_WHYLABS_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          type: llm
+          version: ${{ env.VERSION }}
+          upload_artifact: true
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+          llm_default_encoder: ${{ matrix.llm_default_encoder }}
+
+  publish-docs-to-gitlab:
+    name: Update docs.whylab.ai
+    if: github.ref == 'refs/heads/release'
+    needs: publish-python-libs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "ci@whylabs.ai"
+          git config --global user.name "GitHub Actions for whylabs-ai/whylogs-container-python"
+
+      - name: Push File to GitLab
+        env:
+          GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_DOCUMENTATION_REPO }}
+        run: |
+          # Clone the GitLab repository
+          git clone https://oauth2:${GITLAB_ACCESS_TOKEN}@gitlab.com/whylabs/public/whylabs-docs.git gitlabrepo
+          rsync -avm --include='*/' --include='*.mdx' --exclude='*' ./whylabs_docs/ gitlabrepo/docs/
+          cd gitlabrepo
+          git add .
+          # Only commit and push if there are changes
+          git diff --cached --exit-code || git commit -m "Update documentation from the container github CI"
+          git push -f origin HEAD:whylogs-container_${{ env.VERSION }} || echo "No changes to push."
+          echo "Check doc changes at https://gitlab.com/whylabs/public/whylabs-docs/-/tree/whylogs-container_${{ env.VERSION }}"
+
+  release:
+    name: Generate GitHub Release
+    if: github.ref == 'refs/heads/release'
+    needs: publish-python-libs
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.save_upload_url.outputs.upload_url }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Release Notes
+        id: read_release_notes
+        run: |
+          echo 'release_notes<<EOF' >> $GITHUB_OUTPUT
+          cat ./release_notes/${{ env.VERSION }}.md >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+
+        with:
+          allowUpdates: true
+          generateReleaseNotes: true
+          tag: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          body: |
+            Generated Docker images
+
+            ```
+            registry.gitlab.com/whylabs/langkit-container:${{ env.VERSION }}
+            registry.gitlab.com/whylabs/whylogs-container:${{ env.VERSION }}
+            ```
+
+            Generated Python client
+
+            ```
+            pip install whylogs-container-client==${{ env.VERSION }}
+            ```
+
+            Generated Policy Editor
+
+            ```
+            https://secure-policy-editor.whylabsapp.com/latest/index.html
+            https://secure-policy-editor.whylabsapp.com/${{ env.VERSION }}/index.html
+            ```
+
+            ${{ steps.read_release_notes.outputs.release_notes }}
+
+      # No binaries to put in the release page yet but maybe one day
+      - name: Save upload url
+        shell: bash
+        id: save_upload_url
+        run: |
+          URL=${{ steps.create_release.outputs.upload_url }}
+          echo "Setting output to $URL"
+          echo "upload_url=$URL" >> "$GITHUB_OUTPUT"
+
+  publish-docs:
+    name: Push generated docs to the docs repo
+    if: github.ref == 'refs/heads/release'
+    needs: publish-python-libs
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: "3.10.8"
+
+      - uses: Gr1N/setup-poetry@v8
+        name: Install poetry
+        with:
+          poetry-version: 1.7.1
+
+      - name: Setup gitlab pypi auth
+        shell: bash
+        run: poetry config http-basic.whylabs_container_gitlab __token__ ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      - name: Install python dependencies
+        shell: bash
+        run: make install
+
+      - name: Build docs
+        run: make docs
+
+      - name: Get the openapi definition
+        run: make openapi_def
+
+      - name: Generate redoc page for swagger docs
+        uses: seeebiii/redoc-cli-github-action@v10
+        with:
+          args: "bundle -o ${{ env.DOC_DIR }}/whylogs-container-python.html ${{ env.DOC_DIR }}/openapi.json"
+
+      - name: Push docs to the doc repo
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.WHYLOGS_CONTAINER_DOCS_SSH}}
+        with:
+          source-directory: ${{ env.DOC_DIR }}
+          destination-github-username: "whylabs"
+          destination-repository-name: "whylogs-container-python-docs"
+          user-email: github-build@whylabs.ai
+          target-branch: mainline
+
+  publish-policy-validator-image:
+    name: Publish the policy validator service image to gitlab
+    needs: publish-python-libs
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download and publish the policy validator image
+        uses: ./.github/actions/policy-validator-publish
+        with:
+          username: ${{ secrets.GITLAB_POLICY_VALIDATOR_CONTAINER_REPO_USERNAME }}
+          password: ${{ secrets.GITLAB_POLICY_VALIDATOR_CONTAINER_REPO_TOKEN }}
+          version: ${{ env.VERSION }}
+
+  publish-main-docker-image:
+    name: Publish the main Docker image to gitlab
+    needs: publish-python-libs
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Common Docker Publish Steps
+        uses: ./.github/actions/docker-publish
+        with:
+          type: main
+          username: ${{ secrets.GITLAB_WHYLOGS_CONTAINER_REPO_USERNAME }}
+          password: ${{ secrets.GITLAB_WHYLOGS_CONTAINER_REPO_TOKEN }}
+          version: ${{ env.VERSION }}
+
+  publish-llm-docker-image:
+    name: Publish the llm Docker image to gitlab
+    needs: publish-python-libs
+    timeout-minutes: 360 # This can take a really long time to upload
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        llm_default_encoder:
+          - "AllMiniLML6V2"
+          - "ParaphraseMultilingualMiniLML12V2"
+          - "BGESmallEn_V1_5"
+    steps:
+      - uses: actions/checkout@v3
+      - name: Common Docker Publish Steps
+        uses: ./.github/actions/docker-publish
+        with:
+          type: llm
+          username: ${{ secrets.GITLAB_LANGKIT_CONTAINER_REPO_USERNAME }}
+          password: ${{ secrets.GITLAB_LANGKIT_CONTAINER_REPO_TOKEN }}
+          version: ${{ env.VERSION }}
+          llm_default_encoder: ${{ matrix.llm_default_encoder }}
+          publish_latest: ${{ github.ref == 'refs/heads/release' }}
+
+  publish-python-libs:
+    name: Build and publish python libraries
+    # Most things depend on this target because this is effectively the one whose failure means the most. The
+    # only way this fails normally is if we forget to increment semver, and this is the only one where we can't just
+    # undo it in case of a mistake. Pushing the built docker images and generating the github release page are all
+    # reversible and won't go wrong, and the docs shouldn't be updated unless the code they refer to has been released.
+    needs: ["build-docker-main", "build-docker-llm"]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Python tests and build
+        uses: ./.github/actions/python-build
+        with:
+          whylabs_api_key: ${{ secrets.INTEG_WHYLABS_API_KEY }}
+          run_integ_test: false
+          langkit_whylabs_api_key: ${{ secrets.LANGKIT_WHYLABS_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      - name: Gitlab Python Container Library
+        shell: bash
+        env:
+          POETRY_REPOSITORIES_GITLAB_URL: "https://gitlab.com/api/v4/projects/55361491/packages/pypi"
+        run: |
+          poetry publish --skip-existing -r GITLAB -u __token__ -p ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      - name: PyPi Publish
+        shell: bash
+        run: |
+          cd ./whylogs-container-client
+          ls -l dist
+          poetry publish --skip-existing -u __token__ -p ${{ secrets.WHYLOGS_CLIENT_PYPI_KEY }}
+
+  publish-policy-editor:
+    name: Publish the policy editor to s3 for the current version
+    if: github.ref == 'refs/heads/release'
+    needs:
+      - publish-python-libs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Policy editor build and release
+        uses: ./.github/actions/policy-editor
+        with:
+          aws-access-key-id-dev: ${{ secrets.POLICY_EDITOR_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key-dev: ${{ secrets.POLICY_EDITOR_AWS_SECRET_ACCESS_KEY }}
+          publish: true
+          aws-access-key-id-prod: ${{ secrets.PROD_POLICY_EDITOR_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key-prod: ${{ secrets.PROD_POLICY_EDITOR_AWS_SECRET_ACCESS_KEY }}
+
+  publish-examples:
+    name: Publish the testable examples to our example repo
+    if: github.ref == 'refs/heads/release'
+    needs: publish-python-libs
+    runs-on: ubuntu-latest
+    env:
+      # Make sure that all of the poetry installs end up on the largest file system mount
+      POETRY_VIRTUALENVS_IN_PROJECT: true
+
+    # TODO re-run the examples after doing the pypi client update to make sure everything still works.
+    # It should work since the stuff in pypi is the stuff that was just published in previous steps but
+    # it wouldn't hurt to make sure.
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create Full Release Notes
+        run: |
+          mkdir -p output
+          # Concatenate files, sorting by version number
+          cat $(ls ./release_notes/*.md | sort -rV) > ./example_repo/RELEASE_NOTES.md
+
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: "3.10.8"
+
+      - uses: Gr1N/setup-poetry@v8
+        name: Install poetry
+        with:
+          poetry-version: 1.7.1
+
+      - name: Setup gitlab pypi auth
+        shell: bash
+        run: poetry config http-basic.whylabs_container_gitlab __token__ ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      # Update the lock file to make sure that the newly published client (previous steps) is
+      # used in the example repo
+      - name: Update to latest client
+        run: make update-example-pre-release
+
+      - name: Push examples to the example repo
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.EXAMPLE_REPO_SSH_KEY }}
+        with:
+          source-directory: ./example_repo/
+          destination-github-username: "whylabs"
+          destination-repository-name: "langkit-container-examples"
+          create-target-branch-if-needed: true
+          user-email: github-build@whylabs.ai
+          target-branch: master
+
+      # The action doesn't support tags so this is a close second
+      - name: Push a branch for the current version
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.EXAMPLE_REPO_SSH_KEY }}
+        with:
+          source-directory: ./example_repo/
+          destination-github-username: "whylabs"
+          destination-repository-name: "langkit-container-examples"
+          create-target-branch-if-needed: true
+          user-email: github-build@whylabs.ai
+          target-branch: ${{ env.VERSION }}
+
+  delete_artifacts:
+    name: Delete artifacts
+    needs:
+      - publish-python-libs
+      - publish-main-docker-image
+      - publish-llm-docker-image
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      # This delete assumes that the build worklow doesn't run if the release runs. The release
+      # also uses the llm artifact so if they did run together then it would potentially delete
+      # the artifact prematurely.
+      - uses: geekyeggo/delete-artifact@v2
+        name: Delete artifacts
+        with:
+          name: "*"

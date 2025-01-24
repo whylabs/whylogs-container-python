@@ -1,0 +1,58 @@
+---
+id: misuse-ruleset
+title: "Misuse Ruleset"
+tags:
+  - integration
+  - guardrails
+  - policy
+  - ruleset
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+
+These docs apply to version
+<!-- DOCSUB_INSERT version -->
+of the LLM Secure Container.
+
+<head>
+  <link rel="canonical" href="https://docs.whylabs.ai/docs/secure/misuse-ruleset/" />
+</head>
+
+Misuse is designed to detect the LLM being used in a way that wasn't intended through the detection of various topics and pii. For example,
+you can make sure that users aren't trying to get medical or financial advice from a chat interface dedicated to customer support.
+
+The following yaml code can be added to your policy to enable the Misuse ruleset.
+
+```yaml
+<!-- DOCSUB_INSERT ruleset_example_misuse -->
+```
+
+
+This ruleset adds the equivalent of the following metric section to your yaml policy and uses those metrics to compute
+an overall guardrail scores `prompt.score.misuse` and `response.score.misuse`.
+
+```yaml
+<!-- DOCSUB_INSERT ruleset_example_misuse_metrics -->
+```
+
+The `*.pca.coordinates` fields are included to allow visualization of the traces. They do not contribute to the guardrail score.
+
+The `response.pii` metric comprises a set of individual PII metrics as described in the section on [Secure Container Metrics](/llm-metrics#pii)
+
+The `prompt.topics` metric comprises the set of individual topic metrics specified in the yaml above, e.g. `prompt.topics.medicine` and `prompt.topics.legal`.
+
+The overall guardrail score for the prompt is calculated by first normalizing the constituent metrics to be within the range from
+0 to 100 and then taking the maximum value of the normalized metrics.
+
+The following metric scores are calculated when this ruleset is enabled, in addition to the raw metrics listed above:
+```python
+<!-- DOCSUB_INSERT ruleset_misuse_metrics -->
+```
+
+The general pattern with rulesets is that they include:
+* the overall guardrail metric(s) for the ruleset
+* the set of individual normalized metrics that contributed to the overall metric score
+* the set of raw metrics that were used to compute the normalized metrics
+
+The individual normalized metric names consist of the raw metric name that they were calculated from,
+prefixed with the name of the overall metric that they contributed to.

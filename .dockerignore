@@ -1,0 +1,8 @@
+data
+.venv
+*.pyc
+*__pycache__*
+# Ignore validation schemas during dev
+whylogs_container/whylogs_config/*
+!whylogs_container/whylogs_config/default.yaml
+!whylogs_container/whylogs_config/embeddings.yaml

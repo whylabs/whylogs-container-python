@@ -1,0 +1,351 @@
+name: Workflow
+
+env:
+  VERSION: 3.0.0
+
+on:
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  license_check:
+    name: Check dependencies for disallowed licenses
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: "3.10.8"
+
+      - uses: Gr1N/setup-poetry@v8
+        name: Install poetry
+        with:
+          poetry-version: 1.7.1
+
+      - name: Add poetry export plugin
+        run: poetry self add poetry-plugin-export@1.6
+
+      - name: Generate requirements file
+        run: make requirements.txt
+
+      - name: Check licenses
+        id: license_check_report
+        uses: pilosus/action-pip-license-checker@5b5956a1093c68ebac6ff53c8427790d04ee5c26
+        with:
+          requirements: "requirements.txt"
+          totals: true
+          exclude: "torch.*|whylabs-llm-toolkit.*"
+          headers: true
+          fail: "StrongCopyleft,NetworkCopyleft,Other,Error"
+          verbose: 2
+
+      - name: Print report
+        if: ${{ always() }}
+        run: echo "${{ steps.license_check_report.outputs.report }}"
+
+  trivy_scans:
+    name: Check dependencies for vulnerabilities with Trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Trivy
+        shell: bash
+        run: |
+          sudo apt-get install wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+
+      - name: Download trivy vulnerability database
+        uses: nick-fields/retry@v2
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          command: trivy repo --download-db-only --db-repository public.ecr.aws/aquasecurity/trivy-db
+
+      - name: Run Trivy license scan
+        shell: bash
+        run: |
+          EXIT_CODE=1
+          trivy repo \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db \
+            --scanners license \
+            --severity HIGH,CRITICAL \
+            --license-full \
+            --skip-dirs "example_repo/" \
+            --exit-code $EXIT_CODE \
+            .
+
+      - name: Run Trivy vulerability scan
+        shell: bash
+        run: |
+          EXIT_CODE=1
+          trivy repo \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db \
+            --scanners license \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --skip-dirs "example_repo/" \
+            --exit-code $EXIT_CODE \
+            .
+
+      - name: Run Trivy misconfiguration scan
+        shell: bash
+        run: |
+          EXIT_CODE=1
+          trivy repo \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db \
+            --scanners license \
+            --scanners misconfig \
+            --severity HIGH,CRITICAL \
+            --skip-files Dockerfile.dev \
+            --skip-dirs "example_repo/" \
+            --exit-code $EXIT_CODE \
+            .
+
+  build:
+    name: Build and run all python tests and checks
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Python tests and build
+        uses: ./.github/actions/python-build
+        with:
+          whylabs_api_key: ${{ secrets.INTEG_WHYLABS_API_KEY }}
+          langkit_whylabs_api_key: ${{ secrets.LANGKIT_WHYLABS_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+  build-policy-editor:
+    name: Build policy editor
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Policy editor build
+        uses: ./.github/actions/policy-editor
+        with:
+          aws-access-key-id-dev: ${{ secrets.POLICY_EDITOR_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key-dev: ${{ secrets.POLICY_EDITOR_AWS_SECRET_ACCESS_KEY }}
+
+  build-policy-validator:
+    name: Build policy validator
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Policy validator build
+        uses: ./.github/actions/policy-validator-build
+        with:
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+          version: ${{ env.VERSION }}
+
+  build-docker-main:
+    name: Build the main docker image
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Common Docker Build Steps
+        uses: ./.github/actions/docker-build
+        with:
+          type: main
+          version: ${{ env.VERSION }}
+          upload_artifact: true
+
+  build-docker-llm:
+    name: Build the llm docker image
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        llm_default_encoder:
+          - "AllMiniLML6V2"
+          - "ParaphraseMultilingualMiniLML12V2"
+          - "BGESmallEn_V1_5"
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Common Docker Build Steps
+        uses: ./.github/actions/docker-build
+        with:
+          langkit_whylabs_api_key: ${{ secrets.LANGKIT_WHYLABS_API_KEY }}
+          type: llm
+          version: ${{ env.VERSION }}
+          upload_artifact: true
+          gitlab_pypi_token: ${{ secrets.GITLAB_PYPI_TOKEN }}
+          llm_default_encoder: ${{ matrix.llm_default_encoder }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+
+  discover_examples:
+    name: Discover the list of examples
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v2
+      - id: set-matrix
+        run: |
+          EXAMPLE_DIRS=$(find ./example_repo/examples -mindepth 1 -maxdepth 1 -type d | jq -R -s -c 'split("\n")[:-1]')
+          echo $EXAMPLE_DIRS
+          echo "matrix=${EXAMPLE_DIRS}" >> $GITHUB_OUTPUT
+
+  run_examples:
+    name: Example tests
+    needs:
+      - build
+      - build-docker-llm
+      - build-docker-main
+      - discover_examples
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        example_dir: ${{fromJson(needs.discover_examples.outputs.matrix)}}
+        llm_default_encoder:
+          - "AllMiniLML6V2"
+          # TODO The tests don't work with other encoders atm becuase they assert specific values
+          # - "ParaphraseMultilingualMiniLML12V2"
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.example_dir }}
+
+    env:
+      # Make sure that all of the poetry installs end up on the largest file system mount
+      POETRY_VIRTUALENVS_IN_PROJECT: true
+      POETRY_CACHE_DIR: ${{ github.workspace }}/poetry-cache
+      CONTAINER_ARTIFACT_DIR: ${{ github.workspace }}/container-artifacts
+      CLIENT_WHEEL_DIR: ${{ github.workspace }}/whylogs-container-client/dist/
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # if set to "true" but frees about 6 GB
+          tool-cache: false
+          # all of these default to true, but feel free to set to
+          # "false" if necessary for your workflow
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      # Useing artifact storage to get the wheel from another job instead of building it again to
+      # avoid pip installing the main dependencies, which uses up all the disk space. Just put it
+      # in the spot it would have been built to
+      - name: Download container client wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: python-client-wheel
+          # This path seems to be relative to the main repo regardless of the working-directory config
+          path: ${{ env.CLIENT_WHEEL_DIR }}
+
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: "3.10.8"
+
+      - uses: Gr1N/setup-poetry@v8
+        name: Install poetry
+        with:
+          poetry-version: 1.7.1
+
+      - name: Setup gitlab pypi auth
+        shell: bash
+        run: poetry config http-basic.whylabs_container_gitlab __token__ ${{ secrets.GITLAB_PYPI_TOKEN }}
+
+      - name: Install CI specific dependencies
+        run: make ci-install WHEEL_DIR=${{ env.CLIENT_WHEEL_DIR }}
+
+      # Unclear what causes the permissions issue. Probably one of the disk space saving hacks.
+      - name: Fix permissions
+        run: |
+          ls -al .
+          sudo chown -R $USER:$USER .
+          sudo chmod -R a+r .
+          ls -al .
+
+      - name: Check types
+        run: make lint
+
+      - name: Check formatting
+        run: make format
+
+      - name: Download llm container artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: container-llm_${{ matrix.llm_default_encoder }}
+          path: ${{ env.CONTAINER_ARTIFACT_DIR }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Load Docker image
+        shell: bash
+        run: |
+          docker load --input ${{ env.CONTAINER_ARTIFACT_DIR }}/*.tar
+          docker image ls -a
+
+      - name: Build Docker container
+        run: make build
+
+      - name: Run the integ tests
+        env:
+          # These are only needed by a few examples but it's simpler to just always put them here
+          AWS_ACCESS_KEY_ID: ${{secrets.EXAMPLE_AWS_ACCESS_KEY_ID}}
+          AWS_SECRET_ACCESS_KEY: ${{secrets.EXAMPLE_AWS_SECRET_ACCESS_KEY}}
+          S3_CONFIG_BUCKET_NAME: ${{secrets.EXAMPLE_S3_CONFIG_BUCKET_NAME}}
+          S3_CONFIG_PREFIX: ${{secrets.EXAMPLE_S3_CONFIG_PREFIX}}
+          AWS_SQS_URL: ${{secrets.INTEG_AWS_SQS_URL}}
+          AWS_SQS_DLQ_URL: ${{secrets.INTEG_AWS_SQS_DLQ_URL}}
+          WHYLABS_API_KEY: ${{ secrets.INTEG_WHYLABS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PARENT_WHYLABS_API_KEY: ${{ secrets.PARENT_WHYLABS_API_KEY }}
+          INTEG_CHILD_ORG_1_API_KEY: ${{ secrets.INTEG_CHILD_ORG_1_API_KEY }}
+          INTEG_CHILD_ORG_2_API_KEY: ${{ secrets.INTEG_CHILD_ORG_2_API_KEY }}
+          INTEG_CHILD_ORG_3_API_KEY: ${{ secrets.INTEG_CHILD_ORG_3_API_KEY }}
+        run: make test
+
+  delete_artifacts:
+    name: Delete artifacts
+    needs: run_examples
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      # This delete assumes that the build worklow doesn't run if the release runs. The release
+      # also uses the llm artifact so if they did run together then it would potentially delete
+      # the artifact prematurely.
+      - uses: geekyeggo/delete-artifact@v4
+        name: Delete artifacts
+        with:
+          name: |
+            *

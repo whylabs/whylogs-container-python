@@ -1,0 +1,82 @@
+name: "Build the policy editor project"
+inputs:
+  policy-json-artifact-key:
+    description: "The key to use to download the json schema for the policy. This should be uploaded in the python build step."
+    default: "policy-schema"
+    required: false
+  publish:
+    description: "Whether or not to also publish the policy editor to prod s3. Dev will always be published."
+    default: false
+    required: false
+  aws-access-key-id-dev:
+    description: "The access key id for the dev s3 bucket"
+    required: true
+  aws-secret-access-key-dev:
+    description: "The secret access key for the dev s3 bucket"
+    required: true
+  aws-access-key-id-prod:
+    description: "The access key id for the prod s3 bucket"
+    required: true
+  aws-secret-access-key-prod:
+    description: "The secret access key for the prod s3 bucket"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20.x"
+
+    # This avoid having to setup all of the python dependencies again just to output the schema. Its generated in the
+    # python build action and downloaded here.
+    # This apparently has to come first because the other content of the dir will be wiped out
+    - name: Download the policy schema
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.policy-json-artifact-key }}
+        path: ./policy-editor/dist/standalone/
+
+    - name: Build the policy editor
+      shell: bash
+      run: make policy-editor
+
+    # This ends up requiring python/poetry as well in order to generate the policy schema
+    - name: Build the standalone policy editor for s3 deployment
+      shell: bash
+      run: make policy-editor-standalone
+
+    - name: Upload the policy editor to s3 dev
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{inputs.aws-access-key-id-dev}}
+        AWS_SECRET_ACCESS_KEY: ${{inputs.aws-secret-access-key-dev}}
+        AWS_DEFAULT_REGION: us-west-2
+      run: |
+        make publish-policy-editor-s3-dev # upload as the current version
+        make publish-policy-editor-s3-dev version=latest # double publish as the `latest` version
+
+    - name: Check that the policy editor published
+      shell: bash
+      run: make check-policy-editor-s3-dev
+
+    - name: Upload the policy editor to s3 prod
+      if: ${{ inputs.publish == 'true' }}
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{inputs.aws-access-key-id-prod}}
+        AWS_SECRET_ACCESS_KEY: ${{inputs.aws-secret-access-key-prod}}
+        AWS_DEFAULT_REGION: us-west-2
+      run: |
+        # We double publish to prod so that both prod and dev observatory sites can reference the policy editor in iframes under
+        # the same domain they're hosted at.
+        make publish-policy-editor-s3-prod # upload as the current version for prod
+        make publish-policy-editor-s3-prod version=latest # double publish as the `latest` version for prod
+
+    - name: Check that the policy editor published
+      if: ${{ inputs.publish == 'true' }}
+      shell: bash
+      run: make check-policy-editor-s3-prod

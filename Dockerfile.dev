@@ -1,0 +1,21 @@
+FROM mcr.microsoft.com/vscode/devcontainers/python:3.10
+
+ENV CONTAINER_CACHE_BASE=/root/.cache
+ENV HF_HOME=$CONTAINER_CACHE_BASE/hf_home/
+ENV NLTK_DATA=$CONTAINER_CACHE_BASE/nltk_data/
+ENV SENTENCE_TRANSFORMERS_HOME=$CONTAINER_CACHE_BASE/sentence_transformers/
+ENV TIKTOKEN_CACHE_DIR=$CONTAINER_CACHE_BASE/tiktoken/
+ENV LANGKIT_CACHE=$CONTAINER_CACHE_BASE/langkit_cache/
+ENV WHYLABS_LLM_TOOLKIT_CACHE=$CONTAINER_CACHE_BASE/whylabs_llm_toolkit/
+ENV PIP_CACHE_DIR=$CONTAINER_CACHE_BASE/pip/
+ENV POETRY_CACHE_DIR=$CONTAINER_CACHE_BASE/pypoetry/cache/
+ENV POETRY_VIRTUALENVS_PATH=$CONTAINER_CACHE_BASE/pypoetry/virtualenvs/
+
+# Install poetry
+RUN pipx ensurepath
+RUN pipx install poetry==1.7.1
+
+RUN poetry config virtualenvs.in-project false
+
+RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+    && echo "$SNIPPET" >> "/root/.bashrc"

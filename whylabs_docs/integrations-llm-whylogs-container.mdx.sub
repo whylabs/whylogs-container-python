@@ -1,0 +1,112 @@
+---
+id: integrations-llm-whylogs-container
+title: LangKit LLM Container
+description: This page provides an overview on the LLM Metric Validator which is a containerized version of our open source library, LangKit.
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+<!-- See the Updating Documentation in the DEVLOPING.md file in the whylogs-container-python repository. -->
+
+These docs apply to version
+<!-- DOCSUB_INSERT version -->
+of the LLM Secure Container.
+
+<head>
+  <link
+    rel="canonical"
+    href="https://docs.whylabs.ai/docs/integrations-llm-whylogs-container"
+  />
+</head>
+
+The LLM Metric Validator is a containerized version of our open source library,
+[langkit](https://github.com/whylabs/langkit). It simplifies the deployment of LangKit by hosting model assets, required
+dependencies, metric configuration, as well as integration with the WhyLabs platform. The container exposes endpoints
+for computing these metrics that can be called from LLM applications. It can also be configured to generate validation
+reports based on thresholds for each metric.
+
+The container can be configured with yaml to specify which built in (or custom) llm metrics to execute, and what
+thresholds to validate on.
+
+
+```yaml
+<!-- DOCSUB_INSERT example_yaml -->
+```
+
+The container can be called with any HTTP library, or the [python client](https://pypi.org/project/whylogs-container-client/).
+
+```python
+<!-- DOCSUB_INSERT create_client -->
+
+<!-- DOCSUB_INSERT llm_validate_request_injection_refusal_example -->
+```
+
+The response will contain the generated metrics and any validation failures based on the configured thresholds.
+
+```python
+<!-- DOCSUB_INSERT llm_validate_response_example -->
+```
+
+## Usage
+
+To get an api key for downloading the container, reach out to us at support@whylabs.ai or enterprise@whylabs.ai for
+enterprise users.
+
+See our [example repo](https://github.com/whylabs/langkit-container-examples) for various configuration and usage examples, and see 
+the [published swagger][container docs] for more details on the various APIs available on the container.
+
+## Configuration
+
+The container is configured mostly through environment variables. Here is a minimal example.
+
+```yaml
+<!-- DOCSUB_INSERT minimal_yaml_config -->
+```
+
+A full list of possible environment variables can be found in the [python docs][env docs].
+
+## Deployment
+
+We provide a [Helm chart][helm] with the recommended default deployment.
+
+## Performance
+
+Sample load times were taken with the following parameters.
+
+- 4 concurrent clients
+- Kubernetes cluster with 2 pod set to 4 CPUs.
+
+The default set of metrics that we compute include the following.
+
+- Prompt and response PII detection for email addresses, phone numbers, credit cards, ip addresses, social security numbers, and bank account
+  numbers
+- Prompt and response token count
+- Prompt and response character count
+- Prompt injection score
+- Prompt jailbreak score
+- Response toxicity score
+- Response sentiment score
+- Response refusal score
+- Response rejection score
+
+The following table shows the results of the benchmarks:
+
+| Metrics         | Token count (equal parts prompt/response) | Requests per second | Average request time (ms) | p95 request time (ms) | p99 request time (ms) |
+| --------------- | ----------------------------------------- | ------------------- | ------------------------- | --------------------- | --------------------- |
+| default metrics | 20                                        | 9.99                | 399                       | 459                   | 502                   |
+| default metrics | 200                                       | 7.57                | 509                       | 606                   | 647                   |
+| default metrics | 2000                                      | 3.55                | 1108                      | 1237                  | 1294                  |
+
+
+If there are metrics that you don't need to compute, you can disable them in the configuration to improve performance.
+
+## Troubleshooting
+
+If you need help setting up the container then reach out to us on [Slack][slack].
+
+[slack]: https://whytastic.slack.com/archives/C021K0ERJKB/p1662065792047169?thread_ts=1662064595.498079&cid=C021K0ERJKB
+[container github repo]: https://github.com/whylabs/whylogs-container-python/
+[container docs]: https://whylabs.github.io/whylogs-container-python-docs/whylogs-container-python.html#operation/log_docs_log_docs_post
+[langkit]: https://github.com/whylabs/langkit/
+[helm]: https://github.com/whylabs/charts
+[env docs]: https://whylabs.github.io/whylogs-container-python-docs/whylogs_container.whylabs.container.html#whylogs_container.whylabs.container.server_config.ServerConfig
+

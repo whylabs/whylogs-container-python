@@ -1,0 +1,24 @@
+{
+  "name": "WhyLabs Container",
+  "build": {
+      "context": "..",
+      "options": [ "--platform=linux/amd64"],
+      "dockerfile": "../Dockerfile.dev"
+  },
+  "forwardPorts": [8000],
+  "runArgs": [
+      "--platform",
+      "linux/amd64",
+      "--env-file",
+      ".devcontainer/devcontainer.env"
+  ],
+  "remoteEnv": {
+    "CACHE_ASSETS_RUNTIME": "True"
+  },
+  "postCreateCommand": "poetry config http-basic.whylabs_container_gitlab __token__ $GITLAB_API_KEY; make install",
+  "remoteUser": "root",
+  "mounts": [
+    "type=bind,source=${localWorkspaceFolder}/.devcontainer/cache/,target=/root/.cache/",
+    "source=guardrails-bashhistory,target=/commandhistory,type=volume"
+  ]
+}

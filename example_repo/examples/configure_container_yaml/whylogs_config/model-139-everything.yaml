@@ -1,0 +1,14 @@
+id: my-id
+policy_version: 1
+schema_version: 0.0.1
+whylabs_dataset_id: model-139
+
+metrics:
+  - metric: presets.all
+
+validators:
+  - validator: constraint
+    options:
+      target_metric: prompt.stats.char_count
+      upper_threshold: 200
+      lower_threshold: 2

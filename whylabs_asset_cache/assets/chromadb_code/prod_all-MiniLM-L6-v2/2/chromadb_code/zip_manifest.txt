@@ -1,0 +1,7 @@
+chroma.sqlite3
+b7767dfa-b4c0-4104-8db7-f0148b779baa/header.bin
+b7767dfa-b4c0-4104-8db7-f0148b779baa/length.bin
+b7767dfa-b4c0-4104-8db7-f0148b779baa/link_lists.bin
+b7767dfa-b4c0-4104-8db7-f0148b779baa/index_metadata.pickle
+b7767dfa-b4c0-4104-8db7-f0148b779baa/data_level0.bin
+metadata.json

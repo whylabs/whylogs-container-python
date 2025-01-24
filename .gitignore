@@ -1,0 +1,37 @@
+
+/.devcontainer/cache
+.vite
+/.devcontainer/devcontainer.env
+node_modules
+
+# Can generate requirements.txt from the latest poetry package lock with `make requirements.txt`
+requirements.txt
+
+__pycache__
+*.pyc
+profile.svg
+data
+local.env
+ai/local
+src/ai/local/
+
+# IDE specific
+.idea/*
+
+docs/*.rst
+docs/_build/
+docs/generated
+# This is the custom config dir. It would only be populated in this repo for testing.
+whylogs_container/whylogs_config/*
+!whylogs_container/whylogs_config/default.yaml
+
+.null-*
+launch.json
+langkit-version.txt
+
+.vscode/settings.json
+.venv
+dist/
+
+.DS_Store
+

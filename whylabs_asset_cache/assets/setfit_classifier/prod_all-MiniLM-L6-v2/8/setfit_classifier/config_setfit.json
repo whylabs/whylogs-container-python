@@ -1,0 +1,13 @@
+{
+  "labels": [
+    "harmful",
+    "injection",
+    "code",
+    "medical",
+    "financial",
+    "hate",
+    "toxic",
+    "innocuous"
+  ],
+  "normalize_embeddings": false
+}

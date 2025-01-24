@@ -1,0 +1,56 @@
+---
+id: llm-metrics
+title: Secure Container Metrics
+description: This page provides an overview on all of the available metrics.
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+<!-- See the Updating Documentation in the DEVLOPING.md file in the whylogs-container-python repository. -->
+
+These docs apply to version
+<!-- DOCSUB_INSERT version -->
+of the LLM Secure Container.
+
+# Metric Library
+
+You can query a list of metrics that a specific version of the container supports by using the
+[/list_metrics](https://whylabs.github.io/whylogs-container-python-docs/whylogs-container-python.html#operation/list_metrics) api endpoint.
+
+The latest version of the container supports the following metrics:
+
+```python
+<!-- DOCSUB_INSERT all_metrics -->
+```
+
+We're currently adding docs for individual metrics below so some may be missing, but if they're in the list above they are supported.
+
+## PII
+
+The pii metric uses Presidio to detect personally identifiable information in your data. You can enable it by adding the following metrics 
+to your yaml policy.
+
+```yaml
+<!-- DOCSUB_INSERT metric_library_pii -->
+```
+
+This will automatically include all pii metrics.
+
+```python
+<!-- DOCSUB_INSERT metric_library_pii_metrics -->
+```
+
+The pii metric is an outlier in that you can't specify the individual metrics directly, you can only specify the group of metrics for the 
+`prompt` or `response` because they're all generated together. You can use the regex based metrics for lighter weight metrics and more 
+control over the individual metric selection. This is the policy yaml for the regex metrics.
+
+
+```yaml
+<!-- DOCSUB_INSERT metric_library_regex_pii -->
+```
+
+Or for adding them all at once:
+
+```yaml
+<!-- DOCSUB_INSERT metric_library_regex_pii_groups -->
+```
+

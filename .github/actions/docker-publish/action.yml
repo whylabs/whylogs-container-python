@@ -1,0 +1,111 @@
+name: "Docker Publish Steps"
+description: "Common Docker publishing steps"
+inputs:
+  type:
+    description: "main or llm"
+    required: true
+  username:
+    description: "gitlab container registry username"
+    required: true
+  password:
+    description: "gitlab container registry password"
+    required: true
+  version:
+    description: "current whylogs container version"
+    required: true
+  llm_default_encoder:
+    description: "default encoder for langkit container"
+    required: false
+  publish_latest:
+    default: "true"
+    description: "double publish as the latest tag"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Determine the tag postfix
+      shell: bash
+      id: tag_logic
+      run: |
+        if [[ "${{ inputs.type }}" == "main" ]]; then
+          echo "TAG=registry.gitlab.com/whylabs/whylogs-container" >> $GITHUB_OUTPUT
+        elif [[ "${{ inputs.type }}" == "llm" ]]; then
+          echo "TAG=registry.gitlab.com/whylabs/langkit-container" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+      with:
+        registry: registry.gitlab.com
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: Set artifact name
+      shell: bash
+      id: set-artifact-name
+      run: |
+        if [[ -n "${{ inputs.llm_default_encoder }}" ]]; then
+          echo "artifact_name=container-${{ inputs.type }}_${{ inputs.llm_default_encoder }}" >> $GITHUB_OUTPUT
+        else
+          echo "artifact_name=container-${{ inputs.type }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Set version
+      shell: bash
+      id: set-version
+      run: |
+        if [[ -n "${{ inputs.llm_default_encoder }}" ]]; then
+          echo "version=${{ inputs.version }}_${{ inputs.llm_default_encoder }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Set latest pointer version
+      shell: bash
+      id: latest-version
+      run: |
+        if [[ -n "${{ inputs.llm_default_encoder }}" ]]; then
+          echo "version=latest_${{ inputs.llm_default_encoder }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=latest" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Download container artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ steps.set-artifact-name.outputs.artifact_name }}
+        path: ./container/${{ inputs.type }}/
+
+    - name: Load Docker image
+      shell: bash
+      run: |
+        docker load --input ./container/${{ inputs.type }}/whylogs-container-${{ inputs.type }}.tar
+        docker tag ${{ steps.tag_logic.outputs.TAG }}:${{ steps.set-version.outputs.version }} ${{ steps.tag_logic.outputs.TAG }}:${{ steps.latest-version.outputs.version }}
+        if [[ "${{ inputs.llm_default_encoder }}" == "AllMiniLML6V2" ]]; then
+          docker tag ${{ steps.tag_logic.outputs.TAG }}:${{ steps.set-version.outputs.version }} ${{ steps.tag_logic.outputs.TAG }}:latest
+          docker tag ${{ steps.tag_logic.outputs.TAG }}:${{ steps.set-version.outputs.version }} ${{ steps.tag_logic.outputs.TAG }}:${{ inputs.version }}
+        fi
+        docker image ls -a
+
+    - name: Push Docker container
+      shell: bash
+      run: |
+        docker push ${{ steps.tag_logic.outputs.TAG }}:${{ steps.set-version.outputs.version }}
+
+        if [[ "${{ inputs.publish_latest }}" == "true" ]]; then
+          docker push ${{ steps.tag_logic.outputs.TAG }}:${{ steps.latest-version.outputs.version }}
+        fi
+
+        if [[ "${{ inputs.llm_default_encoder }}" == "AllMiniLML6V2" ]]; then
+          # Only publish the latest tag if the publish_latest input is set to true and the encoder is AllMiniLML6V2
+          if [[ "${{ inputs.publish_latest }}" == "true" ]]; then
+            docker push ${{ steps.tag_logic.outputs.TAG }}:latest
+          fi
+          docker push ${{ steps.tag_logic.outputs.TAG }}:${{ inputs.version }}
+        fi
+
+    # The build host is running out of disk space
+    - name: Delete docker images and cache
+      shell: bash
+      run: docker system prune -a -f && rm -rf /tmp/${{ inputs.type }}

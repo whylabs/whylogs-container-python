@@ -1,0 +1,54 @@
+[tool.poetry]
+name =  "s3_configuration"
+version = "0.1.0"
+description = ""
+authors = ["Anthony Naddeo <anthony@whylabs.ai>"]
+readme = "README.md"
+packages = []
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+# These are all dev dependencies. They're already included in the container and we don't want to
+# overwrite those versions, we just want types and auto completion in this project.
+whylogs-container-client = "2.0.1"
+whylogs = "^1.5.1"
+pandas = "*"
+
+pyright = "^1.1.347"
+ruff = "0.6.2"
+pytest = "^7.4.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+include = ["./whylogs_config/**/*.py", "./test/**/*.py"]
+typeCheckingMode = "strict"
+
+reportMissingTypeStubs = false
+reportMissingParameterType = false
+reportMissingTypeArgumet = false
+
+[tool.ruff]
+line-length = 140
+indent-width = 4
+include = ["./whylogs_config/**/*.py", "./test/**/*.py"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["whylogs", "langkit"]
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+

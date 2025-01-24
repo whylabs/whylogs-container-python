@@ -1,0 +1,130 @@
+name: "Build the python code and wheels"
+description: "Common Python build steps"
+inputs:
+  langkit_whylabs_api_key:
+    description: "api key for org-0 used for langkit assets"
+    required: true
+  openai_api_key:
+    description: "api key for calling openai, which happens during the asset caching phase of the llm asset cache."
+    required: true
+  whylabs_api_key:
+    description: "whylabs api key for integ tests"
+    required: true
+  run_integ_tests:
+    description: "run the integration test"
+    required: false
+    default: true
+  gitlab_pypi_token:
+    required: true
+    description: "A gitlab token from the whylabs-llm-toolkit repo that can be used to download python packages"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-python@v4
+      name: Install Python
+      with:
+        python-version: "3.10.8"
+
+    - uses: Gr1N/setup-poetry@v8
+      name: Install poetry
+      with:
+        poetry-version: 1.7.1
+
+    - name: Setup gitlab pypi auth
+      shell: bash
+      run: poetry config http-basic.whylabs_container_gitlab __token__ ${{ inputs.gitlab_pypi_token }}
+
+    - name: Install python dependencies
+      shell: bash
+      run: make install
+
+    - name: Generate client
+      shell: bash
+      env:
+        WHYLABS_API_KEY: ${{ inputs.langkit_whylabs_api_key }}
+      run: make python-client
+
+    - name: Check for client changes.
+      shell: bash
+      run: |
+        git add whylogs-container-client/
+        # Check for changes in the working directory
+        if ! git diff --quiet; then
+          echo "Changes from 'make python-client' should be committed." >&2
+          git diff >&2
+          exit 1
+        fi
+
+        # Check for changes in the staging area
+        if ! git diff --staged --quiet; then
+          echo "New files from 'make python-client' should be committed." >&2
+          git diff >&2
+          exit 1
+        fi
+
+        echo "No uncommitted changes detected."
+
+    - name: Cache Assets
+      shell: bash
+      env:
+        WHYLABS_API_KEY: ${{ inputs.langkit_whylabs_api_key }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+      run: make asset-cache
+
+    - name: Install client
+      shell: bash
+      env:
+        WHYLABS_API_KEY: ${{ inputs.langkit_whylabs_api_key }}
+      run: make pip-install-python-client
+
+    - name: Check types
+      shell: bash
+      run: make lint
+
+    - name: Check formatting
+      shell: bash
+      run: make format
+
+    - name: Build wheel
+      shell: bash
+      run: make dist
+
+    - name: Run test
+      shell: bash
+      run: make test
+
+    - name: Build docs
+      shell: bash
+      run: make docs
+
+    - name: Run integration tests
+      if: ${{ inputs.run_integ_tests == true }}
+      env:
+        WHYLABS_API_KEY: ${{ inputs.whylabs_api_key }}
+      shell: bash
+      run: make integ
+
+    - name: Upload python client wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-client-wheel
+        path: whylogs-container-client/dist/*.whl
+
+    - name: Upload container library wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-container-wheel
+        path: ./dist/*.whl
+
+    - name: Generate the policy schema
+      shell: bash
+      run: make yaml-policy-schema > ./policy
+
+    - name: Upload the policy schema
+      uses: actions/upload-artifact@v4
+      with:
+        name: policy-schema
+        path: ./policy

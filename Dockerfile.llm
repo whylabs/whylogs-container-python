@@ -1,0 +1,103 @@
+##
+## SETUP
+## Base image that updates package and sets up the user
+##
+FROM python:3.10.13-slim AS base
+RUN apt-get update && apt-get upgrade -y
+
+RUN groupadd -r whylabs && useradd --no-log-init -m -u 1000 -g whylabs whylabs 
+WORKDIR /opt/whylogs-container
+RUN chown -R whylabs:whylabs /opt/whylogs-container
+
+# Update setuptools for security fixes
+RUN pip install --no-cache-dir --upgrade pip setuptools
+RUN pip cache purge
+
+USER whylabs
+
+ARG DEFAULT_ENCODER=AllMiniLML6V2
+ARG CACHE_BASE=/opt/whylogs-container/.cache
+ARG DEFAULT_ASSET_STAGE=prod
+
+# need to configure spacy as well but it doesn't support that atm
+ENV CONTAINER_CACHE_BASE=${CACHE_BASE}
+ENV LLM_CONTAINER=True \
+    POLICY_EDITOR_REQUIERD=True \
+    HF_HOME=$CONTAINER_CACHE_BASE/hf_home/ \
+    NLTK_DATA=$CONTAINER_CACHE_BASE/nltk_data/ \
+    SENTENCE_TRANSFORMERS_HOME=$CONTAINER_CACHE_BASE/sentence_transformers/ \
+    TIKTOKEN_CACHE_DIR=$CONTAINER_CACHE_BASE/tiktoken/ \
+    LANGKIT_CACHE=$CONTAINER_CACHE_BASE/langkit_cache/ \
+    WHYLABS_LLM_TOOLKIT_CACHE=$CONTAINER_CACHE_BASE/whylabs_llm_toolkit/ \
+    PIP_CACHE_DIR=$CONTAINER_CACHE_BASE/pip/ \
+    DEFAULT_ENCODER=${DEFAULT_ENCODER} \
+    DEFAULT_ASSET_STAGE=${DEFAULT_ASSET_STAGE}
+
+RUN mkdir -p $HF_HOME $NLTK_DATA $SENTENCE_TRANSFORMERS_HOME $TIKTOKEN_CACHE_DIR $LANGKIT_CACHE $WHYLABS_LLM_TOOLKIT_CACHE $PIP_CACHE_DIR && \
+    chmod -R a+r $CONTAINER_CACHE_BASE
+
+
+##
+## PYTHON DEPENDENCIES
+## Install/build pip dependencies
+##
+FROM base AS python_dependencies
+
+USER root
+RUN apt-get install --no-install-recommends -y curl build-essential
+USER whylabs
+
+# Install poetry
+ENV PATH="/home/whylabs/.local/bin:${PATH}"
+
+RUN python3.10 -m pip install --user pipx && \
+    python3.10 -m pipx ensurepath && \
+    python3.10 -m pipx install poetry==1.7.1
+
+COPY poetry.lock /opt/whylogs-container/
+COPY pyproject.toml /opt/whylogs-container/
+
+RUN poetry config virtualenvs.in-project true  && \
+    poetry install --no-root --extras "llm" --without dev && \
+    rm -rf .venv/lib/python3.10/site-packages/pandas/tests # Pandas deploys a ton of tests to pypi
+
+# Remove dependencies that we don't need but out transitive dependencies pull in
+RUN poetry run pip uninstall -y torchvision xformers
+
+##
+## MAIN
+## Copy required files from previous steps and copy src over
+## This stage shouldn't require any network access at all, and nothing should be cached
+##
+FROM base
+
+COPY ./whylabs_asset_cache $WHYLABS_LLM_TOOLKIT_CACHE
+
+RUN find $CONTAINER_CACHE_BASE
+
+COPY --from=python_dependencies /opt/whylogs-container/ /opt/whylogs-container/
+COPY whylogs_container/ ./whylogs_container/
+COPY whylogs_container_types/ ./whylogs_container_types/
+COPY ./policy-editor/dist/production ./policy-editor/dist/production
+
+RUN --mount=type=secret,id=openai_api_key,uid=1000 \
+    OPENAI_API_KEY=$(cat /run/secrets/openai_api_key) \
+    bash -c "source .venv/bin/activate; python -m whylogs_container.whylabs.container.metrics.library"
+
+# Run the script again without networking to make sure we have everything we need. If we don't then this will fail
+RUN --mount=type=secret,id=openai_api_key,uid=1000 \
+    --network=none \
+    OPENAI_API_KEY=$(cat /run/secrets/openai_api_key) \
+    bash -c "source .venv/bin/activate; python -m whylogs_container.whylabs.container.metrics.library --skip-downloads"
+
+# We use a local virtualenv, we don't need the global one, it has cached http responses
+RUN rm -rf $PIP_CACHE_DIR
+
+# Don't allow transformers to check for new model versions. Asset downloading happens entirely at build time
+ENV TRANSFORMERS_OFFLINE=1 \
+    HF_DATASETS_OFFLINE=1 \
+    HF_HUB_OFFLINE=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+ENTRYPOINT [ "/bin/bash", "-c", "source .venv/bin/activate; python -m whylogs_container.whylabs.container.startup" ]

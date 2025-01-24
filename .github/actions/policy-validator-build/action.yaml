@@ -1,0 +1,130 @@
+name: "Policy Conversion Service Build"
+description: "Build the policy conversion service container"
+inputs:
+  gitlab_pypi_token:
+    required: false
+    description: "A gitlab token from the whylabs-llm-toolkit repo that can be used to download python packages. Only used in llm build."
+  version:
+    description: "current container publish version"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Env variables
+      shell: bash
+      run: |
+        echo "DOCKER_OUTPUT=./docker/" >> $GITHUB_ENV
+        echo "IMAGE_TAR=./docker/policy-validator.tar" >> $GITHUB_ENV
+
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        # this might remove tools that are actually needed,
+        # if set to "true" but frees about 6 GB
+        tool-cache: false
+        # all of these default to true, but feel free to set to
+        # "false" if necessary for your workflow
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - uses: actions/setup-python@v4
+      if: ${{ inputs.type == 'llm' }}
+      name: Install Python
+      with:
+        python-version: "3.10.8"
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install Trivy
+      shell: bash
+      run: |
+        sudo apt-get install wget apt-transport-https gnupg
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy
+
+    - name: Download trivy vulnerability database
+      uses: nick-fields/retry@v2
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        command: trivy image --download-db-only --db-repository public.ecr.aws/aquasecurity/trivy-db
+
+    - name: Create docker dirs
+      shell: bash
+      run: mkdir -p ${{ env.DOCKER_OUTPUT }}
+
+    - name: Build Docker container
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.policy_validator
+        load: true
+        push: false
+        cache-to: type=local,dest=${{ env.DOCKER_OUTPUT }} # This will be on a larger mounted file system
+        tags: registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }}
+        secrets: |
+          "pypi_api_key=${{ inputs.gitlab_pypi_token }}"
+
+    - name: Install docker slim
+      shell: bash
+      run: |
+        curl -L -o ds.tar.gz https://github.com/slimtoolkit/slim/releases/download/1.40.11/dist_linux.tar.gz
+        tar -xvf ds.tar.gz
+
+    - name: Minify the image with docker slim
+      shell: bash
+      run: |
+        ./dist_linux/slim build --http-probe-cmd-file ./slim/policyProbeCmds.json \
+          --publish-exposed-ports \
+          --show-clogs \
+          --http-probe-start-wait 2 \
+          --http-probe-retry-wait 5 \
+          --tag registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }} \
+          --target registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }}
+
+    - name: Dump minified image to a tar
+      shell: bash
+      run: |
+        docker save registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }} -o ${{ env.IMAGE_TAR }}
+
+    - name: Run Trivy image scan
+      shell: bash
+      run: |
+        trivy image \
+          --db-repository public.ecr.aws/aquasecurity/trivy-db \
+          --scanners vuln \
+          --severity HIGH,CRITICAL \
+          --exit-code 1 \
+          --ignore-unfixed \
+          --input ${{ env.IMAGE_TAR }}
+
+    - name: Make sure container starts
+      shell: bash
+      run: |
+        docker load -i ${{ env.IMAGE_TAR }}
+        ./scripts/check-health.sh policy_validator registry.gitlab.com/whylabs/policy-validator:${{ inputs.version }}
+
+    - name: Show image tar size
+      shell: bash
+      run: ls -lh ${{ env.IMAGE_TAR }}
+
+    - name: Fail if image size is too large
+      shell: bash
+      run: test $(du -m ${{ env.IMAGE_TAR }} | cut -f1) -le 1000 || exit 1
+
+    - name: Upload container artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: policy-validator
+        path: ${{ env.IMAGE_TAR }}

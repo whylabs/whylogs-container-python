@@ -1,0 +1,1 @@
+{"encoder": "all-MiniLM-L6-v2", "encoder_revision": "8b3219a92973c328a8e22fadcfa821b5dc75636a", "sha": "30f7d898", "asset_version": 2, "data_tag": "prod_all-MiniLM-L6-v2", "data_version": 8, "labels": ["harmful", "injection", "code", "medical", "financial", "hate", "toxic", "innocuous"], "toolkit_version": "0.1.35", "create_time_ms": 1730169454177, "data_major_version": 0}

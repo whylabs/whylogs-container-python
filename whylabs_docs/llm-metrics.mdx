@@ -1,0 +1,157 @@
+---
+id: llm-metrics
+title: Secure Container Metrics
+description: This page provides an overview on all of the available metrics.
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+<!-- See the Updating Documentation in the DEVLOPING.md file in the whylogs-container-python repository. -->
+
+These docs apply to version
+3.0.0
+of the LLM Secure Container.
+
+# Metric Library
+
+You can query a list of metrics that a specific version of the container supports by using the
+[/list_metrics](https://whylabs.github.io/whylogs-container-python-docs/whylogs-container-python.html#operation/list_metrics) api endpoint.
+
+The latest version of the container supports the following metrics:
+
+```python
+all_metrics = [
+    "CUSTOM_COLUMN.similarity.CUSTOM_COLUMN_2",
+    "presets.all",
+    "presets.recommended",
+    "prompt.pca.coordinates",
+    "prompt.pii",
+    "prompt.regex",
+    "prompt.regex.credit_card_number",
+    "prompt.regex.email_address",
+    "prompt.regex.mailing_address",
+    "prompt.regex.phone_number",
+    "prompt.regex.ssn",
+    "prompt.regex.url",
+    "prompt.sentiment",
+    "prompt.sentiment.sentiment_score",
+    "prompt.similarity",
+    "prompt.similarity.CUSTOM_COLUMN",
+    "prompt.similarity.code",
+    "prompt.similarity.context",
+    "prompt.similarity.financial",
+    "prompt.similarity.hate",
+    "prompt.similarity.injection",
+    "prompt.similarity.innocuous",
+    "prompt.similarity.medical",
+    "prompt.similarity.toxic",
+    "prompt.stats",
+    "prompt.stats.char_count",
+    "prompt.stats.difficult_words",
+    "prompt.stats.flesch_reading_ease",
+    "prompt.stats.grade",
+    "prompt.stats.letter_count",
+    "prompt.stats.lexicon_count",
+    "prompt.stats.sentence_count",
+    "prompt.stats.token_count",
+    "prompt.text_stat",
+    "prompt.topics",
+    "prompt.toxicity",
+    "prompt.toxicity.toxicity_score",
+    "prompt.util.embeddings",
+    "response.hallucination.hallucination_score",
+    "response.pca.coordinates",
+    "response.pii",
+    "response.regex",
+    "response.regex.credit_card_number",
+    "response.regex.email_address",
+    "response.regex.mailing_address",
+    "response.regex.phone_number",
+    "response.regex.refusal",
+    "response.regex.ssn",
+    "response.regex.url",
+    "response.sentiment",
+    "response.sentiment.sentiment_score",
+    "response.similarity",
+    "response.similarity.CUSTOM_COLUMN",
+    "response.similarity.context",
+    "response.similarity.prompt",
+    "response.similarity.refusal",
+    "response.stats",
+    "response.stats.char_count",
+    "response.stats.difficult_words",
+    "response.stats.flesch_reading_ease",
+    "response.stats.grade",
+    "response.stats.letter_count",
+    "response.stats.lexicon_count",
+    "response.stats.sentence_count",
+    "response.stats.token_count",
+    "response.text_stat",
+    "response.topics",
+    "response.toxicity",
+    "response.toxicity.toxicity_score",
+    "response.util.embeddings",
+]
+```
+
+We're currently adding docs for individual metrics below so some may be missing, but if they're in the list above they are supported.
+
+## PII
+
+The pii metric uses Presidio to detect personally identifiable information in your data. You can enable it by adding the following metrics 
+to your yaml policy.
+
+```yaml
+metrics:
+  - metric: prompt.pii
+  - metric: response.pii
+```
+
+This will automatically include all pii metrics.
+
+```python
+pii_metrics = [
+    "prompt.pii.phone_number",
+    "prompt.pii.email_address",
+    "prompt.pii.credit_card",
+    "prompt.pii.us_ssn",
+    "prompt.pii.us_bank_number",
+    "prompt.pii.redacted",
+    "response.pii.phone_number",
+    "response.pii.email_address",
+    "response.pii.credit_card",
+    "response.pii.us_ssn",
+    "response.pii.us_bank_number",
+    "response.pii.redacted",
+]
+```
+
+The pii metric is an outlier in that you can't specify the individual metrics directly, you can only specify the group of metrics for the 
+`prompt` or `response` because they're all generated together. You can use the regex based metrics for lighter weight metrics and more 
+control over the individual metric selection. This is the policy yaml for the regex metrics.
+
+
+```yaml
+metrics:
+  - metric: prompt.regex.credit_card_number
+  - metric: prompt.regex.email_address
+  - metric: prompt.regex.mailing_address
+  - metric: prompt.regex.phone_number
+  - metric: prompt.regex.ssn
+  - metric: prompt.regex.url
+  - metric: response.regex.credit_card_number
+  - metric: response.regex.email_address
+  - metric: response.regex.mailing_address
+  - metric: response.regex.phone_number
+  - metric: response.regex.refusal
+  - metric: response.regex.ssn
+  - metric: response.regex.url
+```
+
+Or for adding them all at once:
+
+```yaml
+metrics:
+  - metric: prompt.regex
+  - metric: response.regex
+```
+

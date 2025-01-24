@@ -1,0 +1,54 @@
+---
+id: bad-actor-ruleset
+title: "Bad Actor Ruleset"
+tags:
+  - integration
+  - guardrails
+  - policy
+  - ruleset
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+<!-- See the Updating Documentation in the DEVLOPING.md file in the whylogs-container-python repository. -->
+
+These docs apply to version
+<!-- DOCSUB_INSERT version -->
+of the LLM Secure Container.
+
+<head>
+  <link rel="canonical" href="https://docs.whylabs.ai/docs/secure/bad-actor-ruleset/" />
+</head>
+
+Bad Actor is designed to prevent bad actors from interacting with your LLM applications through the detection of jailbreak and injection attacks.
+
+The following yaml code can be added to your policy to enable the Bad Actor ruleset.
+
+```yaml
+<!-- DOCSUB_INSERT ruleset_example_bad_actors -->
+```
+
+This ruleset adds the equivalent of the following metric section to your yaml policy and uses those metrics to compute
+an overall guardrail score `prompt.score.bad_actors`.
+
+```yaml
+<!-- DOCSUB_INSERT ruleset_example_bad_actors_metrics -->
+```
+
+The `*.pca.coordinates` fields are included to allow visualization of the traces. They do not contribute to the guardrail score.
+
+The overall guardrail score for the prompt is calculated by first normalizing the constituent metrics to be within the range from
+0 to 100 and then taking the maximum value of the normalized metrics.
+
+
+The following metric scores are calculated when this ruleset is enabled, in addition to the raw metrics listed above:
+```python
+<!-- DOCSUB_INSERT ruleset_bad_actor_metrics -->
+```
+
+The general pattern with rulesets is that they include:
+* the overall guardrail metric(s) for the ruleset
+* the set of individual normalized metrics that contributed to the overall metric score
+* the set of raw metrics that were used to compute the normalized metrics
+
+The individual normalized metric names consist of the raw metric name that they were calculated from,
+prefixed with the name of the overall metric that they contributed to.

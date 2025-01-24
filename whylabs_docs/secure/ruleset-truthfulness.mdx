@@ -1,0 +1,67 @@
+---
+id: truthfulness-ruleset
+title: "Truthfulness Ruleset"
+tags:
+  - integration
+  - guardrails
+  - policy
+  - ruleset
+---
+
+<!-- WARNING This file is maintained in the whylabs-ai/whylogs-container-python repository. Don't manually edit without also updating that. -->
+
+These docs apply to version
+3.0.0
+of the LLM Secure Container.
+
+<head>
+  <link rel="canonical" href="https://docs.whylabs.ai/docs/secure/truthfulness-ruleset/" />
+</head>
+
+Truthfulness is designed to detect falsehoods (by opting into hallucination detection) or off topic responses from the LLM. For example, you can detect
+when an LLM's response doesn't appear to be related to the input prompt.
+
+The following yaml code can be added to your policy to enable the Truthfulness ruleset.
+
+```yaml
+- ruleset: score.truthfulness
+  options:
+    behavior: observe
+    sensitivity: medium
+    rag_enabled: true
+    hallucinations_enabled: false
+```
+
+This ruleset adds the equivalent of the following metric section to your yaml policy and uses those metrics to compute
+an overall guardrail score `response.score.truthfulness`.
+
+```yaml
+metrics:
+    - metric: response.similarity.prompt
+    - metric: response.similarity.context
+    - metric: prompt.pca.coordinates
+    - metric: response.pca.coordinates
+```
+
+The `*.pca.coordinates` fields are included to allow visualization of the traces. They do not contribute to the guardrail score.
+
+The overall guardrail score for the prompt is calculated by first normalizing the constituent metrics to be within the range from
+0 to 100 and then taking the maximum value of the normalized metrics.
+
+
+The following metric scores are calculated when this ruleset is enabled, in addition to the raw metrics listed above:
+```python
+truthfulness_metrics = [
+    "response.score.truthfulness",
+    "response.score.truthfulness.response.similarity.prompt",
+]
+```
+
+The general pattern with rulesets is that they include:
+* the overall guardrail metric(s) for the ruleset
+* the set of individual normalized metrics that contributed to the overall metric score
+* the set of raw metrics that were used to compute the normalized metrics
+
+The individual normalized metric names consist of the raw metric name that they were calculated from,
+prefixed with the name of the overall metric that they contributed to.
+
